@@ -37,7 +37,7 @@ export default async function JobDetailPage(props: {
   const latestMaterial = job.applications[0]?.materials[0] ?? null;
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10 text-zinc-900">
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
           <Link href="/" className="text-sm text-zinc-600 hover:underline">
@@ -72,7 +72,7 @@ export default async function JobDetailPage(props: {
       </div>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
+        <div className="rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900">
           <h2 className="text-sm font-medium">Scoring</h2>
           {ev ? (
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
@@ -94,24 +94,24 @@ export default async function JobDetailPage(props: {
           )}
         </div>
 
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
+        <div className="rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900">
           <h2 className="text-sm font-medium">Top reasons / risks / gaps</h2>
           <div className="mt-3 grid grid-cols-1 gap-3 text-sm">
             <div>
               <div className="text-xs font-medium text-zinc-600">Reasons</div>
-              <pre className="mt-1 whitespace-pre-wrap rounded-md bg-zinc-50 p-2 text-xs">
+              <pre className="mt-1 whitespace-pre-wrap rounded-md bg-zinc-50 p-2 text-xs text-zinc-900">
                 {JSON.stringify(ev?.reasons ?? [], null, 2)}
               </pre>
             </div>
             <div>
               <div className="text-xs font-medium text-zinc-600">Risks</div>
-              <pre className="mt-1 whitespace-pre-wrap rounded-md bg-zinc-50 p-2 text-xs">
+              <pre className="mt-1 whitespace-pre-wrap rounded-md bg-zinc-50 p-2 text-xs text-zinc-900">
                 {JSON.stringify(ev?.risks ?? [], null, 2)}
               </pre>
             </div>
             <div>
               <div className="text-xs font-medium text-zinc-600">Gaps</div>
-              <pre className="mt-1 whitespace-pre-wrap rounded-md bg-zinc-50 p-2 text-xs">
+              <pre className="mt-1 whitespace-pre-wrap rounded-md bg-zinc-50 p-2 text-xs text-zinc-900">
                 {JSON.stringify(ev?.gaps ?? [], null, 2)}
               </pre>
             </div>
@@ -119,10 +119,10 @@ export default async function JobDetailPage(props: {
         </div>
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-4">
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900">
         <h2 className="text-sm font-medium">Tailored CV (latest)</h2>
         {latestMaterial?.content ? (
-          <pre className="mt-3 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs">
+          <pre className="mt-3 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-900">
             {latestMaterial.content}
           </pre>
         ) : (
@@ -132,9 +132,9 @@ export default async function JobDetailPage(props: {
         )}
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-4">
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900">
         <h2 className="text-sm font-medium">Extracted raw text (preview)</h2>
-        <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs">
+        <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-900">
           {(job.rawText ?? "").slice(0, 12000)}
         </pre>
       </section>

@@ -1,41 +1,72 @@
 import { NextResponse } from "next/server";
 
+import { createHash } from "crypto";
+
 import { prisma } from "@/lib/db";
 import { parseJobFromHtml } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { url?: string };
-    const url = body.url?.trim();
+    const body = (await req.json()) as { url?: string; pastedText?: string };
+    const url = body.url?.trim() || undefined;
+    const pastedText = body.pastedText?.trim() || undefined;
 
-    if (!url) {
-      return NextResponse.json({ error: "Missing url" }, { status: 400 });
-    }
-
-    const existing = await prisma.jobPosting.findUnique({ where: { sourceUrl: url } });
-    if (existing) {
-      return NextResponse.json({ jobId: existing.id, deduped: true });
-    }
-
-    const res = await fetch(url, {
-      redirect: "follow",
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        accept: "text/html,application/xhtml+xml",
-      },
-    });
-
-    if (!res.ok) {
+    if (!url && !pastedText) {
       return NextResponse.json(
-        { error: `Failed to fetch url (status ${res.status})` },
+        { error: "Provide url or pastedText" },
         { status: 400 },
       );
     }
 
-    const html = await res.text();
-    const parsed = parseJobFromHtml(url, html);
+    const sourceUrl = url
+      ? url
+      : `manual:${createHash("sha256").update(pastedText ?? "").digest("hex").slice(0, 16)}`;
+
+    const existing = await prisma.jobPosting.findUnique({
+      where: { sourceUrl },
+    });
+    if (existing) {
+      return NextResponse.json({ jobId: existing.id, deduped: true });
+    }
+
+    let parsed:
+      | ReturnType<typeof parseJobFromHtml>
+      | { title?: string; companyName?: string; rawText: string; parsedJson: object };
+    let rawHtml: string | null = null;
+
+    if (url) {
+      const res = await fetch(url, {
+        redirect: "follow",
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          accept: "text/html,application/xhtml+xml",
+        },
+      });
+
+      if (!res.ok) {
+        return NextResponse.json(
+          { error: `Failed to fetch url (status ${res.status})` },
+          { status: 400 },
+        );
+      }
+
+      const html = await res.text();
+      rawHtml = html;
+      parsed = parseJobFromHtml(url, html);
+    } else {
+      const firstLine = (pastedText ?? "").split(/\r?\n/)[0]?.trim();
+      parsed = {
+        title: firstLine?.slice(0, 200) || undefined,
+        companyName: undefined,
+        rawText: pastedText ?? "",
+        parsedJson: {
+          sourceUrl,
+          parser: "pasted_v1",
+        },
+      };
+    }
 
     const prefs = await prisma.candidatePreferences.findFirst();
 
@@ -43,11 +74,11 @@ export async function POST(req: Request) {
 
     const job = await prisma.jobPosting.create({
       data: {
-        sourceUrl: url,
-        source: new URL(url).hostname,
+        sourceUrl,
+        source: url ? new URL(url).hostname : "manual",
         title: parsed.title,
         companyName: parsed.companyName,
-        rawHtml: html,
+        rawHtml,
         rawText: parsed.rawText,
         parsedJson: parsed.parsedJson as unknown as object,
         status: "SCORED",

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/db";
 import { IngestJobForm } from "@/components/IngestJobForm";
+import { RescoreButton } from "@/components/RescoreButton";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,9 @@ export default async function Home() {
   });
 
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50">
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-10">
-        <header className="flex flex-col gap-1">
+    <div className="flex flex-1 flex-col bg-zinc-50 text-zinc-900">
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-10 text-zinc-900">
+        <header className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">
             Career Autopilot
           </h1>
@@ -25,6 +26,15 @@ export default async function Home() {
             MVP: ingest a job URL, parse, score, classify, and generate a tailored
             CV.
           </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/profile"
+              className="text-sm font-medium text-zinc-900 underline"
+            >
+              Edit profile
+            </Link>
+            <RescoreButton />
+          </div>
         </header>
 
         <section className="rounded-lg border border-zinc-200 bg-white p-4">
