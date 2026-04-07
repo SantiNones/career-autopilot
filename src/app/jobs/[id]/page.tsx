@@ -35,6 +35,10 @@ export default async function JobDetailPage(props: {
 
   const ev = job.evaluations[0] ?? null;
   const latestMaterial = job.applications[0]?.materials[0] ?? null;
+  const parsed = job.parsedJson as unknown as Record<string, unknown> | null;
+  const blocked = Boolean(parsed && parsed["blocked"]);
+  const blockedReason = (parsed?.["blockedReason"] as string | undefined) ?? undefined;
+  const textLength = (parsed?.["textLength"] as number | undefined) ?? job.rawText?.length ?? 0;
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10 text-zinc-900">
@@ -70,6 +74,29 @@ export default async function JobDetailPage(props: {
           <GenerateCvButton jobId={job.id} />
         </div>
       </div>
+
+      {blocked || textLength < 800 ? (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <h2 className="text-sm font-medium text-zinc-900">Parsing warning</h2>
+          <p className="mt-1 text-sm text-zinc-800">
+            This page looks blocked or the extracted text is too short to score
+            reliably.
+          </p>
+          <p className="mt-1 text-xs text-zinc-700">
+            Reason: {blockedReason ?? (textLength < 800 ? "too_short" : "unknown")}
+          </p>
+          <p className="mt-2 text-sm text-zinc-800">
+            Recommended: copy/paste the full job description in the dashboard
+            ingest form (fallback) and ingest again.
+          </p>
+          <Link
+            href="/"
+            className="mt-3 inline-block text-sm font-medium text-zinc-900 underline"
+          >
+            Go to dashboard
+          </Link>
+        </section>
+      ) : null}
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-zinc-200 bg-white p-4 text-zinc-900">

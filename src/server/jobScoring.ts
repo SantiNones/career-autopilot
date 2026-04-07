@@ -43,10 +43,33 @@ function extractRequiredYears(text: string): number | null {
   return n;
 }
 
+function looksBlockedOrLowValue(text: string): { blocked: boolean; reason: string | null } {
+  const t = text.toLowerCase();
+  const short = text.trim().length < 800;
+  const blockedSignals: Array<{ re: RegExp; reason: string }> = [
+    { re: /sign\s*in|log\s*in|iniciar\s*sesión|acceder/i, reason: "login" },
+    { re: /captcha|cloudflare/i, reason: "bot_protection" },
+    { re: /join\s+linkedin|linkedin\s+member/i, reason: "linkedin_gated" },
+    { re: /enable\s+javascript|turn\s+on\s+javascript/i, reason: "js_required" },
+  ];
+
+  for (const s of blockedSignals) {
+    if (s.re.test(t)) return { blocked: true, reason: s.reason };
+  }
+
+  if (short) return { blocked: true, reason: "too_short" };
+  return { blocked: false, reason: null };
+}
+
 export function scoreJob(text: string, prefs: CandidatePreferences | null): JobScore {
   const reasons: string[] = [];
   const risks: string[] = [];
   const gaps: string[] = [];
+
+  const quality = looksBlockedOrLowValue(text);
+  if (quality.blocked) {
+    risks.push(`Low-quality or blocked content (${quality.reason ?? "unknown"})`);
+  }
 
   const positiveKeywords = (prefs?.positiveKeywords as unknown as string[] | undefined) ?? [];
   const negativeKeywords = (prefs?.negativeKeywords as unknown as string[] | undefined) ?? [];
@@ -85,14 +108,20 @@ export function scoreJob(text: string, prefs: CandidatePreferences | null): JobS
   const effortReward = clamp(55 + (stackFit - 50) / 2 - (seniorityFit < 30 ? 20 : 0));
   const strategicValue = clamp(55 + (stackFit - 50) / 3);
 
-  const totalScore = Math.round(
+  let totalScore = Math.round(
     (seniorityFit + stackFit + domainFit + languageFit + geographyFit + salaryFit + screeningFit + honestyFit + effortReward + strategicValue) /
       10,
   );
 
+  if (quality.blocked) {
+    totalScore = Math.max(0, totalScore - 25);
+  }
+
   let label: JobLabel = "MAYBE";
   if (seniorityFit <= 20 || totalScore < 45) label = "SKIP";
   else if (totalScore >= 70 && honestyFit >= 55) label = "APPLY";
+
+  if (quality.blocked && label === "APPLY") label = "MAYBE";
 
   const narrativeSuggestion =
     label === "APPLY"
@@ -102,6 +131,7 @@ export function scoreJob(text: string, prefs: CandidatePreferences | null): JobS
         : "Not recommended: focus effort on closer junior matches with clearer requirements.";
 
   if (label === "SKIP" && years !== null && years >= 5) reasons.push("Auto-skip: senior requirement");
+  if (quality.blocked) reasons.push("Manual review recommended: paste full job description");
 
   return {
     label,
