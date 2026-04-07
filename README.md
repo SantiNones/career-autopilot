@@ -2,16 +2,38 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### 1) Configure env
+
+Create your local env file:
+
+```bash
+cp .env.example .env
+```
+
+### 2) Start Postgres (local)
+
+```bash
+npm run db:up
+```
+
+### 3) Install deps
+
+```bash
+npm install
+```
+
+### 4) Create DB schema (Prisma)
+
+```bash
+npm run prisma:migrate
+```
+
+### 5) Run the app
+
 First, run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.

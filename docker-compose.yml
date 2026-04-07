@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    container_name: career_autopilot_db
+    environment:
+      POSTGRES_USER: career
+      POSTGRES_PASSWORD: career
+      POSTGRES_DB: career_autopilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - career_autopilot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U career -d career_autopilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  career_autopilot_pgdata:
