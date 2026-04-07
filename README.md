@@ -16,6 +16,8 @@ cp .env.example .env
 npm run db:up
 ```
 
+If Docker is not available, you can skip Postgres and use SQLite (default `DATABASE_URL` in `.env.example`).
+
 ### 3) Install deps
 
 ```bash
