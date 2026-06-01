@@ -39,38 +39,43 @@ export function IngestJobForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-zinc-900">Job URL (optional)</label>
-      <div className="flex gap-2">
-        <input
-          className="flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
-          placeholder="https://..."
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <button
-          className="rounded-md bg-black px-3 py-2 text-sm text-white disabled:opacity-50"
-          disabled={loading || (!url.trim() && !pastedText.trim())}
-          type="submit"
-        >
-          {loading ? "Ingesting..." : "Ingest"}
-        </button>
+    <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-zinc-500">
+          Job URL
+        </label>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            placeholder="https://company.com/careers/role"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          <button
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+            disabled={loading || (!url.trim() && !pastedText.trim())}
+            type="submit"
+          >
+            {loading ? "Ingesting…" : "Ingest"}
+          </button>
+        </div>
       </div>
 
-      <label className="mt-2 text-sm font-medium text-zinc-900">
-        Or paste job description (fallback)
-      </label>
-      <textarea
-        className="min-h-28 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
-        placeholder="Paste the job description here..."
-        value={pastedText}
-        onChange={(e) => setPastedText(e.target.value)}
-      />
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-zinc-500">
+          Or paste job description
+        </label>
+        <textarea
+          className="min-h-24 w-full resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          placeholder="Paste the full job description here…"
+          value={pastedText}
+          onChange={(e) => setPastedText(e.target.value)}
+        />
+      </div>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <p className="text-xs text-zinc-500">
-        Tip: start with a public job post (LinkedIn often blocks; try company
-        career pages).
+      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+      <p className="text-xs text-zinc-400">
+        Tip: LinkedIn often blocks scrapers — try company career pages directly.
       </p>
     </form>
   );

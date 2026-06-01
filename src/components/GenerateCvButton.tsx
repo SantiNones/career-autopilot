@@ -26,16 +26,16 @@ export function GenerateCvButton(props: { jobId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <button
-        className="w-fit rounded-md bg-black px-3 py-2 text-sm text-white disabled:opacity-50"
+        className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-50"
         onClick={generate}
         disabled={loading}
         type="button"
       >
-        {loading ? "Generating..." : "Generate tailored CV (Markdown)"}
+        {loading ? "Generating…" : "Generate Tailored CV"}
       </button>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
     </div>
   );
 }
