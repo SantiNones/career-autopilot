@@ -16,6 +16,7 @@ export default async function Home() {
     take: 100,
     include: {
       evaluations: { orderBy: { createdAt: "desc" }, take: 1 },
+      _count: { select: { materials: true } },
     },
   });
 
@@ -130,7 +131,7 @@ export default async function Home() {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {jobs.map((job) => (
-                  <JobTableRow key={job.id} job={job} />
+                  <JobTableRow key={job.id} job={{ ...job, hasMaterials: job._count.materials > 0 }} />
                 ))}
                 {jobs.length === 0 && (
                   <tr>

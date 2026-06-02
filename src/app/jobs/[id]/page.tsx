@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 import { prisma } from "@/lib/db";
-import { GenerateCvButton } from "@/components/GenerateCvButton";
 import { DeleteJobButton } from "@/components/DeleteJobButton";
+import { MaterialsSection } from "@/components/MaterialsSection";
 import { StatusControls, StatusBadge } from "@/components/StatusControls";
 import type { AppStatus } from "@/components/StatusControls";
 
@@ -82,11 +82,7 @@ export default async function JobDetailPage(props: {
     where: { id },
     include: {
       evaluations: { orderBy: { createdAt: "desc" }, take: 1 },
-      applications: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        include: { materials: { orderBy: { createdAt: "desc" }, take: 1 } },
-      },
+      materials: { orderBy: { createdAt: "desc" } },
     },
   });
 
@@ -104,8 +100,8 @@ export default async function JobDetailPage(props: {
   }
 
   const ev = job.evaluations[0] ?? null;
-  const latestMaterial = job.applications[0]?.materials[0] ?? null;
   const appStatus = job.applicationStatus as AppStatus;
+  const hasMaterials = job.materials.length > 0;
   const parsed = job.parsedJson as unknown as Record<string, unknown> | null;
   const blocked = Boolean(parsed?.["blocked"]);
   const blockedReason = (parsed?.["blockedReason"] as string | undefined) ?? undefined;
@@ -264,23 +260,12 @@ export default async function JobDetailPage(props: {
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
           <h2 className="mb-4 text-sm font-semibold text-zinc-900">Actions</h2>
           <div className="flex flex-wrap items-center gap-3">
-            <GenerateCvButton jobId={job.id} />
             <DeleteJobButton jobId={job.id} />
           </div>
         </div>
 
-        {/* Tailored CV */}
-        {latestMaterial?.content && (
-          <div className="rounded-xl border border-zinc-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold text-zinc-900">
-              Tailored CV{" "}
-              <span className="font-normal text-zinc-400">(v{latestMaterial.version})</span>
-            </h2>
-            <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-4 text-xs leading-relaxed text-zinc-800">
-              {latestMaterial.content}
-            </pre>
-          </div>
-        )}
+        {/* Materials */}
+        <MaterialsSection jobId={job.id} initialMaterials={job.materials} />
 
         {/* Raw text debug */}
         <details className="overflow-hidden rounded-xl border border-zinc-200 bg-white">

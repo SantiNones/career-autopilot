@@ -48,6 +48,7 @@ export function JobTableRow({
     source: string | null;
     createdAt: Date;
     applicationStatus: string;
+    hasMaterials?: boolean;
     evaluations: Array<{ label: string; totalScore: number }>;
   };
 }) {
@@ -77,6 +78,11 @@ export function JobTableRow({
         <div className="font-medium text-zinc-900">{job.title ?? "(untitled)"}</div>
         {job.companyName && (
           <div className="mt-0.5 text-xs text-zinc-400">{job.companyName}</div>
+        )}
+        {job.hasMaterials && (
+          <span className="mt-1 inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+            Materials ready
+          </span>
         )}
       </td>
       <td className="px-5 py-3.5">
