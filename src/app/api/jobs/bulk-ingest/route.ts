@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 
 import { prisma } from "@/lib/db";
-import { parseJobFromHtml, validateJobPage } from "@/server/jobParsing";
+import { parseJobFromHtml, validateJobPage, isLikelyJobUrl } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
 
 export async function POST(req: Request) {
@@ -35,6 +35,14 @@ export async function POST(req: Request) {
         let parsed: { title?: string; companyName?: string; rawText: string; parsedJson: object };
 
         if (isUrl) {
+          console.log("[bulk-ingest] item:", item);
+          const urlCheck = isLikelyJobUrl(item);
+          if (!urlCheck.ok) {
+            console.log("[bulk-ingest] REJECTED pre-flight:", urlCheck.reason);
+            results.push({ invalid: true, error: urlCheck.reason, item: item.slice(0, 80) });
+            continue;
+          }
+
           const res = await fetch(item, {
             redirect: "follow",
             headers: {

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 
 import { prisma } from "@/lib/db";
-import { parseJobFromHtml, validateJobPage } from "@/server/jobParsing";
+import { parseJobFromHtml, validateJobPage, isLikelyJobUrl } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
 
 export async function POST(req: Request) {
@@ -36,6 +36,16 @@ export async function POST(req: Request) {
     let rawHtml: string | null = null;
 
     if (url) {
+      console.log("[ingest] URL input:", url);
+      const urlCheck = isLikelyJobUrl(url);
+      if (!urlCheck.ok) {
+        console.log("[ingest] REJECTED pre-flight:", urlCheck.reason);
+        return NextResponse.json(
+          { error: "This URL does not look like a job posting. Paste the job description manually." },
+          { status: 400 },
+        );
+      }
+
       const res = await fetch(url, {
         redirect: "follow",
         headers: {

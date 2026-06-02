@@ -64,6 +64,65 @@ function guessCompanyFromTitle(title?: string): string | undefined {
   return undefined;
 }
 
+// ─── URL-level pre-flight validation ───
+
+const HARD_BLOCKED_HOSTS = new Set([
+  "google.com",
+  "www.google.com",
+  "github.com",
+  "www.github.com",
+  "vercel.com",
+  "www.vercel.com",
+  "gmail.com",
+  "accounts.google.com",
+]);
+
+const JOB_PATH_KEYWORDS = [
+  "job", "jobs", "career", "careers", "opening", "openings",
+  "position", "positions", "vacancy", "vacancies",
+  "greenhouse", "lever", "ashby", "workable",
+];
+
+export function isLikelyJobUrl(url: string): { ok: true } | { ok: false; reason: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, reason: "Invalid URL" };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const pathname = parsed.pathname.toLowerCase();
+
+  console.log("[isLikelyJobUrl] hostname:", hostname, "pathname:", pathname);
+
+  // 1. Hard block known generic domains
+  if (HARD_BLOCKED_HOSTS.has(hostname)) {
+    console.log("[isLikelyJobUrl] REJECTED — hard blocked host:", hostname);
+    return { ok: false, reason: "Generic homepage domain — not a job posting" };
+  }
+
+  // 2. LinkedIn: only allow /jobs/view/ URLs
+  if (hostname === "linkedin.com" || hostname === "www.linkedin.com") {
+    if (!pathname.includes("/jobs/view/")) {
+      console.log("[isLikelyJobUrl] REJECTED — LinkedIn URL without /jobs/view/");
+      return { ok: false, reason: "LinkedIn URL must contain /jobs/view/" };
+    }
+  }
+
+  // 3. For any hostname, the path should contain a job-related keyword
+  const hasJobKeyword = JOB_PATH_KEYWORDS.some((kw) => pathname.includes(`/${kw}`));
+  if (!hasJobKeyword) {
+    console.log("[isLikelyJobUrl] REJECTED — no job keyword in path:", pathname);
+    return { ok: false, reason: "URL path does not look like a job posting" };
+  }
+
+  console.log("[isLikelyJobUrl] ACCEPTED");
+  return { ok: true };
+}
+
+// ─── Post-parse content validation ───
+
 export type ValidationResult =
   | { valid: true }
   | { valid: false; reason: string };
