@@ -1,10 +1,13 @@
 import Link from "next/link";
 
 import { prisma } from "@/lib/db";
+import { calculateMetrics } from "@/lib/metrics";
 import { IngestJobForm } from "@/components/IngestJobForm";
 import { BulkIngestForm } from "@/components/BulkIngestForm";
 import { RescoreButton } from "@/components/RescoreButton";
 import { JobTableRow } from "@/components/JobTableRow";
+import { STATUS_COLORS, STATUS_LABELS } from "@/components/StatusControls";
+import type { AppStatus } from "@/components/StatusControls";
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +52,7 @@ export default async function Home() {
     },
   });
 
-  const total = jobs.length;
-  const applyCount = jobs.filter((j) => j.evaluations[0]?.label === "APPLY").length;
-  const maybeCount = jobs.filter((j) => j.evaluations[0]?.label === "MAYBE").length;
-  const skipCount = jobs.filter((j) => j.evaluations[0]?.label === "SKIP").length;
-  const appliedCount = jobs.filter((j) => j.status === "APPLIED").length;
+  const m = calculateMetrics(jobs);
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -70,6 +69,12 @@ export default async function Home() {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            <Link
+              href="/applications"
+              className="text-sm text-zinc-500 transition-colors hover:text-zinc-900"
+            >
+              Pipeline
+            </Link>
             <Link href="/profile" className="text-sm text-zinc-500 transition-colors hover:text-zinc-900">
               Profile
             </Link>
@@ -87,15 +92,16 @@ export default async function Home() {
           </p>
         </div>
 
-        {/* Metric cards */}
-        <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
+        {/* Metric cards — row 1: counts */}
+        <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {(
             [
-              { label: "Total Jobs", value: total, valueColor: "text-zinc-900", cardClass: "border-zinc-200 bg-white" },
-              { label: "Apply", value: applyCount, valueColor: "text-emerald-700", cardClass: "border-emerald-200 bg-emerald-50" },
-              { label: "Maybe", value: maybeCount, valueColor: "text-amber-700", cardClass: "border-amber-200 bg-amber-50" },
-              { label: "Skip", value: skipCount, valueColor: "text-rose-700", cardClass: "border-rose-200 bg-rose-50" },
-              { label: "Applied", value: appliedCount, valueColor: "text-indigo-700", cardClass: "border-indigo-200 bg-indigo-50" },
+              { label: "Total Jobs",  value: m.total,      valueColor: "text-zinc-900",    cardClass: "border-zinc-200 bg-white" },
+              { label: "To Apply",    value: m.applyLabel,  valueColor: "text-emerald-700", cardClass: "border-emerald-200 bg-emerald-50" },
+              { label: "Maybe",       value: m.maybeLabel,  valueColor: "text-amber-700",   cardClass: "border-amber-200 bg-amber-50" },
+              { label: "Applied",     value: m.applied,     valueColor: "text-sky-700",     cardClass: "border-sky-200 bg-sky-50" },
+              { label: "Interviews",  value: m.interviews,  valueColor: "text-violet-700",  cardClass: "border-violet-200 bg-violet-50" },
+              { label: "Offers",      value: m.offers,      valueColor: "text-emerald-800", cardClass: "border-emerald-300 bg-emerald-100" },
             ] as const
           ).map((card) => (
             <div key={card.label} className={`rounded-xl border p-4 ${card.cardClass}`}>
@@ -103,6 +109,22 @@ export default async function Home() {
               <div className="mt-1 text-xs font-medium text-zinc-500">{card.label}</div>
             </div>
           ))}
+        </div>
+
+        {/* Metric cards — row 2: rates */}
+        <div className="mb-8 grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+            <div className="text-2xl font-bold tabular-nums text-violet-700">{m.interviewRate}%</div>
+            <div className="mt-1 text-xs font-medium text-zinc-500">
+              Interview rate <span className="text-zinc-400">(applied → interview)</span>
+            </div>
+          </div>
+          <div className="rounded-xl border border-emerald-300 bg-emerald-100 p-4">
+            <div className="text-2xl font-bold tabular-nums text-emerald-800">{m.offerRate}%</div>
+            <div className="mt-1 text-xs font-medium text-zinc-500">
+              Offer rate <span className="text-zinc-400">(interview → offer)</span>
+            </div>
+          </div>
         </div>
 
         {/* Ingest panels */}
@@ -131,7 +153,8 @@ export default async function Home() {
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/70">
                   <th className="px-5 py-3 text-xs font-medium text-zinc-400">Score</th>
-                  <th className="px-5 py-3 text-xs font-medium text-zinc-400">Label</th>
+                  <th className="px-5 py-3 text-xs font-medium text-zinc-400">AI Label</th>
+                  <th className="px-5 py-3 text-xs font-medium text-zinc-400">Status</th>
                   <th className="px-5 py-3 text-xs font-medium text-zinc-400">Role</th>
                   <th className="px-5 py-3 text-xs font-medium text-zinc-400">Source</th>
                   <th className="px-5 py-3 text-xs font-medium text-zinc-400">Added</th>
@@ -140,7 +163,7 @@ export default async function Home() {
               <tbody className="divide-y divide-zinc-100">
                 {jobs.map((job) => {
                   const ev = job.evaluations[0];
-                  const isApplied = job.status === "APPLIED";
+                  const appStatus = job.applicationStatus as AppStatus;
                   return (
                     <JobTableRow key={job.id} href={`/jobs/${job.id}`}>
                       <td className="px-5 py-3.5">
@@ -151,18 +174,16 @@ export default async function Home() {
                         )}
                       </td>
                       <td className="px-5 py-3.5">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {ev ? (
-                            <LabelBadge label={ev.label} />
-                          ) : (
-                            <span className="text-zinc-300">—</span>
-                          )}
-                          {isApplied && (
-                            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                              Applied
-                            </span>
-                          )}
-                        </div>
+                        {ev ? (
+                          <LabelBadge label={ev.label} />
+                        ) : (
+                          <span className="text-zinc-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[appStatus]}`}>
+                          {STATUS_LABELS[appStatus]}
+                        </span>
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="font-medium text-zinc-900">
@@ -189,7 +210,7 @@ export default async function Home() {
                 })}
                 {jobs.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-12 text-center">
+                    <td colSpan={6} className="px-5 py-12 text-center">
                       <p className="text-sm text-zinc-400">No jobs yet.</p>
                       <p className="mt-1 text-xs text-zinc-300">
                         Paste a URL or job description above to get started.

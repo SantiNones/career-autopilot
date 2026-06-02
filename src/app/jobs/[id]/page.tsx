@@ -2,8 +2,9 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/db";
 import { GenerateCvButton } from "@/components/GenerateCvButton";
-import { MarkAppliedButton } from "@/components/MarkAppliedButton";
 import { DeleteJobButton } from "@/components/DeleteJobButton";
+import { StatusControls, StatusBadge } from "@/components/StatusControls";
+import type { AppStatus } from "@/components/StatusControls";
 
 export const dynamic = "force-dynamic";
 
@@ -104,8 +105,7 @@ export default async function JobDetailPage(props: {
 
   const ev = job.evaluations[0] ?? null;
   const latestMaterial = job.applications[0]?.materials[0] ?? null;
-  const isApplied =
-    job.status === "APPLIED" || job.applications[0]?.status === "applied";
+  const appStatus = job.applicationStatus as AppStatus;
   const parsed = job.parsedJson as unknown as Record<string, unknown> | null;
   const blocked = Boolean(parsed?.["blocked"]);
   const blockedReason = (parsed?.["blockedReason"] as string | undefined) ?? undefined;
@@ -123,9 +123,10 @@ export default async function JobDetailPage(props: {
             </div>
             <span className="text-sm font-semibold text-zinc-900">Career Autopilot</span>
           </Link>
-          <Link href="/" className="text-sm text-zinc-500 transition-colors hover:text-zinc-900">
-            ← Dashboard
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/applications" className="text-sm text-zinc-500 transition-colors hover:text-zinc-900">Pipeline</Link>
+            <Link href="/" className="text-sm text-zinc-500 transition-colors hover:text-zinc-900">← Dashboard</Link>
+          </div>
         </div>
       </nav>
 
@@ -165,11 +166,7 @@ export default async function JobDetailPage(props: {
             <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
               {ev && <ScorePill score={ev.totalScore} />}
               {ev && <LabelBadge label={ev.label} />}
-              {isApplied && (
-                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
-                  ✓ Applied
-                </span>
-              )}
+              <StatusBadge status={appStatus} />
             </div>
           </div>
         </div>
@@ -191,6 +188,12 @@ export default async function JobDetailPage(props: {
             </p>
           </div>
         )}
+
+        {/* Pipeline Status */}
+        <div className="rounded-xl border border-zinc-200 bg-white p-5">
+          <h2 className="mb-4 text-sm font-semibold text-zinc-900">Pipeline Status</h2>
+          <StatusControls jobId={job.id} currentStatus={appStatus} />
+        </div>
 
         {/* Application strategy / narrative */}
         {ev?.narrativeSuggestion && (
@@ -262,7 +265,6 @@ export default async function JobDetailPage(props: {
           <h2 className="mb-4 text-sm font-semibold text-zinc-900">Actions</h2>
           <div className="flex flex-wrap items-center gap-3">
             <GenerateCvButton jobId={job.id} />
-            <MarkAppliedButton jobId={job.id} isApplied={isApplied} />
             <DeleteJobButton jobId={job.id} />
           </div>
         </div>

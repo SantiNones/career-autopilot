@@ -82,6 +82,7 @@ export async function POST(req: Request) {
         rawText: parsed.rawText,
         parsedJson: parsed.parsedJson as unknown as object,
         status: "SCORED",
+        applicationStatus: evaluation.label,
         evaluations: {
           create: {
             label: evaluation.label,

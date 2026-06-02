@@ -36,7 +36,7 @@ export async function POST(
 
     await prisma.jobPosting.update({
       where: { id },
-      data: { status: "APPLIED" },
+      data: { status: "APPLIED", applicationStatus: "APPLIED" },
     });
 
     return NextResponse.json({ ok: true });

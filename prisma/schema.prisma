@@ -13,6 +13,17 @@ enum JobLabel {
   SKIP
 }
 
+enum ApplicationStatus {
+  DISCOVERED
+  APPLY
+  MAYBE
+  SKIP
+  APPLIED
+  INTERVIEW
+  REJECTED
+  OFFER
+}
+
 enum JobStatus {
   SOURCED
   PARSED
@@ -81,7 +92,8 @@ model JobPosting {
   rawText     String?
   parsedJson  Json?
 
-  status      JobStatus @default(SOURCED)
+  status            JobStatus         @default(SOURCED)
+  applicationStatus ApplicationStatus @default(DISCOVERED)
 
   evaluations JobEvaluation[]
   applications Application[]
