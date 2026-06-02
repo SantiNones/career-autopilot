@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 
 import { prisma } from "@/lib/db";
-import { parseJobFromHtml, validateJobPage, isLikelyJobUrl } from "@/server/jobParsing";
+import { parseJobFromHtml, validateJobPage, validateIngestInput } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
 
 export async function POST(req: Request) {
@@ -20,9 +20,15 @@ export async function POST(req: Request) {
 
     for (const item of items) {
       try {
-        const isUrl = /^https?:\/\//.test(item);
-        const sourceUrl = isUrl
-          ? item
+        const ingestCheck = validateIngestInput(item);
+        if (!ingestCheck.ok) {
+          console.log("[bulk-ingest] REJECTED:", ingestCheck.reason);
+          results.push({ invalid: true, error: ingestCheck.reason, item: item.slice(0, 80) });
+          continue;
+        }
+
+        const sourceUrl = ingestCheck.isUrl
+          ? ingestCheck.url
           : `manual:${createHash("sha256").update(item).digest("hex").slice(0, 16)}`;
 
         const existing = await prisma.jobPosting.findUnique({ where: { sourceUrl } });
@@ -34,16 +40,10 @@ export async function POST(req: Request) {
         let rawHtml: string | null = null;
         let parsed: { title?: string; companyName?: string; rawText: string; parsedJson: object };
 
-        if (isUrl) {
-          console.log("[bulk-ingest] item:", item);
-          const urlCheck = isLikelyJobUrl(item);
-          if (!urlCheck.ok) {
-            console.log("[bulk-ingest] REJECTED pre-flight:", urlCheck.reason);
-            results.push({ invalid: true, error: urlCheck.reason, item: item.slice(0, 80) });
-            continue;
-          }
+        if (ingestCheck.isUrl) {
+          const normalizedUrl = ingestCheck.url;
 
-          const res = await fetch(item, {
+          const res = await fetch(normalizedUrl, {
             redirect: "follow",
             headers: {
               "user-agent":
@@ -57,9 +57,9 @@ export async function POST(req: Request) {
           }
           const html = await res.text();
           rawHtml = html;
-          parsed = parseJobFromHtml(item, html);
+          parsed = parseJobFromHtml(normalizedUrl, html);
 
-          const validation = validateJobPage(item, parsed.title, parsed.rawText);
+          const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
           if (!validation.valid) {
             results.push({ invalid: true, error: validation.reason, item: item.slice(0, 80) });
             continue;
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
         const job = await prisma.jobPosting.create({
           data: {
             sourceUrl,
-            source: isUrl ? new URL(item).hostname : "manual",
+            source: ingestCheck.isUrl ? new URL(ingestCheck.url).hostname : "manual",
             title: parsed.title,
             companyName: parsed.companyName,
             rawHtml,

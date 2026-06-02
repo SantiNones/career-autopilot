@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 
 import { prisma } from "@/lib/db";
-import { parseJobFromHtml, validateJobPage, isLikelyJobUrl } from "@/server/jobParsing";
+import { parseJobFromHtml, validateJobPage, validateIngestInput } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
 
 export async function POST(req: Request) {
@@ -35,18 +35,19 @@ export async function POST(req: Request) {
       | { title?: string; companyName?: string; rawText: string; parsedJson: object };
     let rawHtml: string | null = null;
 
-    if (url) {
-      console.log("[ingest] URL input:", url);
-      const urlCheck = isLikelyJobUrl(url);
-      if (!urlCheck.ok) {
-        console.log("[ingest] REJECTED pre-flight:", urlCheck.reason);
-        return NextResponse.json(
-          { error: "This URL does not look like a job posting. Paste the job description manually." },
-          { status: 400 },
-        );
-      }
+    const input = url || pastedText || "";
+    const ingestCheck = validateIngestInput(input);
+    if (!ingestCheck.ok) {
+      return NextResponse.json(
+        { error: "This URL does not look like a job posting. Paste the job description manually." },
+        { status: 400 },
+      );
+    }
 
-      const res = await fetch(url, {
+    if (ingestCheck.isUrl) {
+      const normalizedUrl = ingestCheck.url;
+
+      const res = await fetch(normalizedUrl, {
         redirect: "follow",
         headers: {
           "user-agent":
@@ -64,9 +65,9 @@ export async function POST(req: Request) {
 
       const html = await res.text();
       rawHtml = html;
-      parsed = parseJobFromHtml(url, html);
+      parsed = parseJobFromHtml(normalizedUrl, html);
 
-      const validation = validateJobPage(url, parsed.title, parsed.rawText);
+      const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
       if (!validation.valid) {
         return NextResponse.json(
           { error: "This URL does not look like a job posting. Paste the job description manually." },
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
     const job = await prisma.jobPosting.create({
       data: {
         sourceUrl,
-        source: url ? new URL(url).hostname : "manual",
+        source: ingestCheck.isUrl ? new URL(ingestCheck.url).hostname : "manual",
         title: parsed.title,
         companyName: parsed.companyName,
         rawHtml,

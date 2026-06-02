@@ -83,6 +83,34 @@ const JOB_PATH_KEYWORDS = [
   "greenhouse", "lever", "ashby", "workable",
 ];
 
+export function looksLikeUrl(input: string): boolean {
+  return /^https?:\/\//i.test(input) || /^[a-z0-9-]+\.[a-z]{2,}/i.test(input);
+}
+
+export function validateIngestInput(
+  input: string,
+): { ok: true; isUrl: true; url: string } | { ok: true; isUrl: false } | { ok: false; reason: string } {
+  const trimmed = input.trim();
+  const isUrl = looksLikeUrl(trimmed);
+
+  console.log("[validateIngestInput] input:", trimmed.slice(0, 80), "isUrl:", isUrl);
+
+  if (isUrl) {
+    // normalize bare domain to https
+    const url = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const urlCheck = isLikelyJobUrl(url);
+    if (!urlCheck.ok) {
+      console.log("[validateIngestInput] REJECTED:", urlCheck.reason);
+      return { ok: false, reason: urlCheck.reason };
+    }
+    console.log("[validateIngestInput] ACCEPTED URL:", url);
+    return { ok: true, isUrl: true, url };
+  }
+
+  console.log("[validateIngestInput] ACCEPTED as pasted text");
+  return { ok: true, isUrl: false };
+}
+
 export function isLikelyJobUrl(url: string): { ok: true } | { ok: false; reason: string } {
   let parsed: URL;
   try {
