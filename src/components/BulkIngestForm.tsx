@@ -7,7 +7,7 @@ export function BulkIngestForm() {
   const router = useRouter();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ ingested: number; deduped: number; errors: number } | null>(null);
+  const [result, setResult] = useState<{ ingested: number; deduped: number; invalid: number; errors: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
@@ -31,7 +31,7 @@ export function BulkIngestForm() {
       });
       const data = (await res.json()) as {
         ok?: boolean;
-        results?: Array<{ jobId?: string; error?: string; deduped?: boolean }>;
+        results?: Array<{ jobId?: string; error?: string; deduped?: boolean; invalid?: boolean }>;
         error?: string;
       };
       if (!res.ok) throw new Error(data.error ?? "Failed");
@@ -39,8 +39,9 @@ export function BulkIngestForm() {
       const results = data.results ?? [];
       const ingested = results.filter((r) => r.jobId && !r.deduped).length;
       const deduped = results.filter((r) => r.deduped).length;
-      const errors = results.filter((r) => r.error).length;
-      setResult({ ingested, deduped, errors });
+      const invalid = results.filter((r) => r.invalid).length;
+      const errors = results.filter((r) => r.error && !r.invalid).length;
+      setResult({ ingested, deduped, invalid, errors });
       if (ingested > 0 || deduped > 0) {
         setText("");
         router.refresh();
@@ -76,6 +77,7 @@ export function BulkIngestForm() {
         <p className="text-xs font-medium text-emerald-700">
           ✓ {result.ingested} ingested
           {result.deduped > 0 ? `, ${result.deduped} already existed` : ""}
+          {result.invalid > 0 ? `, ${result.invalid} skipped (not a job posting)` : ""}
           {result.errors > 0 ? `, ${result.errors} failed` : ""}
         </p>
       )}

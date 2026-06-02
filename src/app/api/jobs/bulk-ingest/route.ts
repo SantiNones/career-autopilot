@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 
 import { prisma } from "@/lib/db";
-import { parseJobFromHtml } from "@/server/jobParsing";
+import { parseJobFromHtml, validateJobPage } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
 
 export async function POST(req: Request) {
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     }
 
     const prefs = await prisma.candidatePreferences.findFirst();
-    const results: Array<{ jobId?: string; deduped?: boolean; error?: string; item?: string }> = [];
+    const results: Array<{ jobId?: string; deduped?: boolean; invalid?: boolean; error?: string; item?: string }> = [];
 
     for (const item of items) {
       try {
@@ -50,6 +50,12 @@ export async function POST(req: Request) {
           const html = await res.text();
           rawHtml = html;
           parsed = parseJobFromHtml(item, html);
+
+          const validation = validateJobPage(item, parsed.title, parsed.rawText);
+          if (!validation.valid) {
+            results.push({ invalid: true, error: validation.reason, item: item.slice(0, 80) });
+            continue;
+          }
         } else {
           const firstLine = item.split(/\r?\n/)[0]?.trim();
           parsed = {

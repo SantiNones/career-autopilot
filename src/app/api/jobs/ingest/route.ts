@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "crypto";
 
 import { prisma } from "@/lib/db";
-import { parseJobFromHtml } from "@/server/jobParsing";
+import { parseJobFromHtml, validateJobPage } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
 
 export async function POST(req: Request) {
@@ -55,6 +55,14 @@ export async function POST(req: Request) {
       const html = await res.text();
       rawHtml = html;
       parsed = parseJobFromHtml(url, html);
+
+      const validation = validateJobPage(url, parsed.title, parsed.rawText);
+      if (!validation.valid) {
+        return NextResponse.json(
+          { error: "This URL does not look like a job posting. Paste the job description manually." },
+          { status: 400 },
+        );
+      }
     } else {
       const firstLine = (pastedText ?? "").split(/\r?\n/)[0]?.trim();
       parsed = {

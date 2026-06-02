@@ -64,6 +64,106 @@ function guessCompanyFromTitle(title?: string): string | undefined {
   return undefined;
 }
 
+export type ValidationResult =
+  | { valid: true }
+  | { valid: false; reason: string };
+
+const BLOCKED_TITLE_PATTERNS = [
+  /^LinkedIn Login$/i,
+  /^Sign in\s*\|?\s*LinkedIn$/i,
+  /^Join LinkedIn$/i,
+  /^Log In\s*\|?\s*LinkedIn$/i,
+  /^LinkedIn:\s*Log In or Sign Up$/i,
+  /^Before you continue to Google$/i,
+  /^Google$/i,
+  /^GitHub: Where the world builds software$/i,
+  /^GitHub$/i,
+  /^Vercel: Build. Preview. Ship.$/i,
+  /^Vercel$/i,
+  /^Welcome to Vercel$/i,
+  /^Home$/i,
+  /^Homepage$/i,
+  /^Index$/i,
+  /^Startseite$/i,
+  /^Accueil$/i,
+];
+
+const BLOCKED_TEXT_PATTERNS = [
+  /authwall/i,
+  /login required/i,
+  /sign in to view/i,
+  /sign in or create account/i,
+  /join to view/i,
+  /members only/i,
+  /restricted access/i,
+  /before you continue to google/i,
+];
+
+const GENERIC_DOMAIN_HOME_PAGES: Record<string, RegExp> = {
+  "google.com": /google/i,
+  "github.com": /github/i,
+  "vercel.com": /vercel/i,
+  "linkedin.com": /linkedin/i,
+};
+
+export function validateJobPage(
+  sourceUrl: string,
+  title: string | undefined,
+  rawText: string,
+): ValidationResult {
+  const hostname = new URL(sourceUrl).hostname.replace(/^www\./, "");
+
+  // 1. Blocked / authwall pages by title
+  if (title) {
+    for (const pattern of BLOCKED_TITLE_PATTERNS) {
+      if (pattern.test(title)) {
+        return { valid: false, reason: "Blocked or login page detected" };
+      }
+    }
+  }
+
+  // 2. Blocked by text patterns
+  const textLower = rawText.toLowerCase();
+  for (const pattern of BLOCKED_TEXT_PATTERNS) {
+    if (pattern.test(textLower)) {
+      return { valid: false, reason: "Authwall or restricted content detected" };
+    }
+  }
+
+  // 3. Generic homepages for known domains
+  for (const [domain, titlePattern] of Object.entries(GENERIC_DOMAIN_HOME_PAGES)) {
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+      if (!title || titlePattern.test(title)) {
+        return { valid: false, reason: "Generic homepage — not a job posting" };
+      }
+    }
+  }
+
+  // 4. Must have a title that looks like a job title
+  if (!title || title.length < 5) {
+    return { valid: false, reason: "Missing or too short page title" };
+  }
+
+  // 5. Must have meaningful content
+  const meaningfulText = rawText.replace(/\s+/g, " ").trim();
+  if (meaningfulText.length < 400) {
+    return { valid: false, reason: "Page content too short to be a job posting" };
+  }
+
+  // 6. Title should not be a generic homepage title
+  const genericTitles = [
+    "home", "homepage", "index", "start", "welcome", "main", "portal",
+    "dashboard", "account", "profile", "settings", "about us", "contact",
+    "blog", "news", "search", "jobs", "careers", "work with us",
+  ];
+  const titleWords = title.toLowerCase().split(/\s+/);
+  if (genericTitles.some((gt) => titleWords.includes(gt) && titleWords.length <= 3)) {
+    return { valid: false, reason: "Page title looks like a generic homepage" };
+  }
+
+  return { valid: true };
+}
+
 export function parseJobFromHtml(sourceUrl: string, html: string): ParsedJob {
   const titleFromTitleTag = extractTitle(html);
   const titleFromH1 = extractH1(html);
