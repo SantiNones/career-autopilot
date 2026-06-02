@@ -6,42 +6,9 @@ import { IngestJobForm } from "@/components/IngestJobForm";
 import { BulkIngestForm } from "@/components/BulkIngestForm";
 import { RescoreButton } from "@/components/RescoreButton";
 import { JobTableRow } from "@/components/JobTableRow";
-import { STATUS_COLORS, STATUS_LABELS } from "@/components/StatusControls";
-import type { AppStatus } from "@/components/StatusControls";
+import { ClearAllJobsButton } from "@/components/ClearAllJobsButton";
 
 export const dynamic = "force-dynamic";
-
-function ScorePill({ score }: { score: number }) {
-  const color =
-    score >= 70
-      ? "bg-emerald-100 text-emerald-800"
-      : score >= 50
-        ? "bg-amber-100 text-amber-800"
-        : "bg-rose-100 text-rose-800";
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums ${color}`}
-    >
-      {score}
-    </span>
-  );
-}
-
-function LabelBadge({ label }: { label: string }) {
-  const styles: Record<string, string> = {
-    APPLY: "bg-emerald-100 text-emerald-800",
-    MAYBE: "bg-amber-100 text-amber-800",
-    SKIP: "bg-rose-100 text-rose-800",
-  };
-  const style = styles[label] ?? "bg-zinc-100 text-zinc-600";
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${style}`}
-    >
-      {label}
-    </span>
-  );
-}
 
 export default async function Home() {
   const jobs = await prisma.jobPosting.findMany({
@@ -158,59 +125,16 @@ export default async function Home() {
                   <th className="px-5 py-3 text-xs font-medium text-zinc-400">Role</th>
                   <th className="px-5 py-3 text-xs font-medium text-zinc-400">Source</th>
                   <th className="px-5 py-3 text-xs font-medium text-zinc-400">Added</th>
+                  <th className="px-5 py-3 text-right text-xs font-medium text-zinc-400">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {jobs.map((job) => {
-                  const ev = job.evaluations[0];
-                  const appStatus = job.applicationStatus as AppStatus;
-                  return (
-                    <JobTableRow key={job.id} href={`/jobs/${job.id}`}>
-                      <td className="px-5 py-3.5">
-                        {ev ? (
-                          <ScorePill score={ev.totalScore} />
-                        ) : (
-                          <span className="text-zinc-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {ev ? (
-                          <LabelBadge label={ev.label} />
-                        ) : (
-                          <span className="text-zinc-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[appStatus]}`}>
-                          {STATUS_LABELS[appStatus]}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="font-medium text-zinc-900">
-                          {job.title ?? "(untitled)"}
-                        </div>
-                        {job.companyName && (
-                          <div className="mt-0.5 text-xs text-zinc-400">{job.companyName}</div>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">
-                          {job.source ?? "manual"}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-3.5 text-xs text-zinc-400">
-                        {new Date(job.createdAt).toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </td>
-                    </JobTableRow>
-                  );
-                })}
+                {jobs.map((job) => (
+                  <JobTableRow key={job.id} job={job} />
+                ))}
                 {jobs.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-12 text-center">
+                    <td colSpan={7} className="px-5 py-12 text-center">
                       <p className="text-sm text-zinc-400">No jobs yet.</p>
                       <p className="mt-1 text-xs text-zinc-300">
                         Paste a URL or job description above to get started.
@@ -221,6 +145,9 @@ export default async function Home() {
               </tbody>
             </table>
           </div>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <ClearAllJobsButton />
         </div>
       </main>
     </div>
