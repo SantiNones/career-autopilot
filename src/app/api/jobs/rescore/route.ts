@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { scoreJob } from "@/server/jobScoring";
+import { saveFitAnalysis } from "@/server/fitAnalysis";
 
 export async function POST() {
   try {
@@ -43,6 +44,8 @@ export async function POST() {
         where: { id: job.id },
         data: { status: "SCORED" },
       });
+
+      void saveFitAnalysis(job.id);
     }
 
     return NextResponse.json({ ok: true, rescored: jobs.length });

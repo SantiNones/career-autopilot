@@ -5,6 +5,7 @@ import { createHash } from "crypto";
 import { prisma } from "@/lib/db";
 import { parseJobFromHtml, validateJobPage, validateIngestInput } from "@/server/jobParsing";
 import { scoreJob } from "@/server/jobScoring";
+import { saveFitAnalysis } from "@/server/fitAnalysis";
 
 export async function POST(req: Request) {
   try {
@@ -112,6 +113,7 @@ export async function POST(req: Request) {
           select: { id: true },
         });
 
+        void saveFitAnalysis(job.id);
         results.push({ jobId: job.id, deduped: false });
       } catch (e) {
         results.push({

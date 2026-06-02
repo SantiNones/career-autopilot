@@ -83,6 +83,7 @@ export default async function JobDetailPage(props: {
     include: {
       evaluations: { orderBy: { createdAt: "desc" }, take: 1 },
       materials: { orderBy: { createdAt: "desc" } },
+      fitAnalysis: true,
     },
   });
 
@@ -200,6 +201,105 @@ export default async function JobDetailPage(props: {
             <p className="text-sm leading-relaxed text-zinc-800">{ev.narrativeSuggestion}</p>
           </div>
         )}
+
+        {/* Fit Analysis */}
+        {job.fitAnalysis && (() => {
+          const fa = job.fitAnalysis;
+          const matchingSkills = fa.matchingSkills as string[];
+          const strengths = fa.strengths as string[];
+          const gaps = fa.gaps as string[];
+          const projects = fa.matchingProjects as string[];
+          const scoreColor =
+            fa.confidenceScore >= 70
+              ? "bg-emerald-100 text-emerald-800"
+              : fa.confidenceScore >= 45
+                ? "bg-amber-100 text-amber-800"
+                : "bg-rose-100 text-rose-800";
+          return (
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <h2 className="mb-4 text-sm font-semibold text-zinc-900">Fit Analysis</h2>
+
+              {/* Top row: score + badges */}
+              <div className="mb-5 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-bold tabular-nums ${scoreColor}`}>
+                  {fa.confidenceScore}% match
+                </span>
+                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
+                  {fa.recommendedAngle}
+                </span>
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600">
+                  {fa.jobFocus}
+                </span>
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600">
+                  {fa.seniorityDetected}
+                </span>
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600">
+                  {fa.companyType}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                {/* Matching skills */}
+                {matchingSkills.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Matching Skills</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {matchingSkills.map((s, i) => (
+                        <span key={i} className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Gaps */}
+                {gaps.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Skill Gaps</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {gaps.map((g, i) => (
+                        <span key={i} className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
+                          {g}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Strengths */}
+                {strengths.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Strengths</p>
+                    <ul className="flex flex-col gap-1.5">
+                      {strengths.map((s, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-zinc-700">
+                          <span className="mt-0.5 text-emerald-500">✓</span>
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Matching projects */}
+                {projects.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Relevant Projects</p>
+                    <ul className="flex flex-col gap-1.5">
+                      {projects.map((p, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-zinc-700">
+                          <span className="mt-0.5 text-indigo-400">▸</span>
+                          {p}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Score breakdown + Reasons / Risks / Gaps */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

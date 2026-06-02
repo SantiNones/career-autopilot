@@ -95,9 +95,10 @@ model JobPosting {
   status            JobStatus         @default(SOURCED)
   applicationStatus ApplicationStatus @default(DISCOVERED)
 
-  evaluations JobEvaluation[]
+  evaluations  JobEvaluation[]
   applications Application[]
-  materials   JobMaterial[]
+  materials    JobMaterial[]
+  fitAnalysis  FitAnalysis?
 }
 
 model JobEvaluation {
@@ -181,6 +182,27 @@ model JobMaterial {
   content String?
   version Int          @default(1)
   status  MaterialStatus @default(DRAFT)
+}
+
+model FitAnalysis {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  jobPostingId String     @unique
+  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+
+  strengths        Json
+  gaps             Json
+  matchingSkills   Json
+  matchingProjects Json
+
+  recommendedAngle  String
+  companyType       String
+  jobFocus          String
+  seniorityDetected String
+
+  confidenceScore Int
 }
 
 model ResumeMaster {
