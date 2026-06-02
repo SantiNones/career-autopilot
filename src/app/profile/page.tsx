@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { prisma } from "@/lib/db";
+import { MasterResumeForm } from "@/components/MasterResumeForm";
 import { ProfileForm } from "@/components/ProfileForm";
 
 function NavBar() {
@@ -23,11 +24,28 @@ function NavBar() {
 
 export const dynamic = "force-dynamic";
 
+function resumeToForm(r: { rawText: string | null; summary: string | null; experience: string | null; projects: string | null; skills: string | null; education: string | null; languages: string | null; links: string | null } | null) {
+  if (!r) return null;
+  return {
+    rawText: r.rawText ?? "",
+    summary: r.summary ?? "",
+    experience: r.experience ?? "",
+    projects: r.projects ?? "",
+    skills: r.skills ?? "",
+    education: r.education ?? "",
+    languages: r.languages ?? "",
+    links: r.links ?? "",
+  };
+}
+
 export default async function ProfilePage() {
-  const profile = await prisma.userProfile.findFirst({
-    include: { preferences: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const [profile, resume] = await Promise.all([
+    prisma.userProfile.findFirst({
+      include: { preferences: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.resumeMaster.findFirst({ orderBy: { createdAt: "asc" } }),
+  ]);
 
   if (!profile || !profile.preferences) {
     const created = await prisma.userProfile.create({
@@ -79,6 +97,16 @@ export default async function ProfilePage() {
               }}
             />
           </div>
+
+          <div className="mt-8">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-zinc-900">Master Resume</h2>
+              <p className="mt-0.5 text-sm text-zinc-500">Source of truth for tailored application materials.</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-6">
+              <MasterResumeForm initial={resumeToForm(resume)} />
+            </div>
+          </div>
         </main>
       </div>
     );
@@ -116,6 +144,16 @@ export default async function ProfilePage() {
               },
             }}
           />
+        </div>
+
+        <div className="mt-8">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-zinc-900">Master Resume</h2>
+            <p className="mt-0.5 text-sm text-zinc-500">Source of truth for tailored application materials.</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-white p-6">
+            <MasterResumeForm initial={resumeToForm(resume)} />
+          </div>
         </div>
       </main>
     </div>

@@ -156,6 +156,21 @@ model ApplicationMaterial {
   version  Int @default(1)
 }
 
+model ResumeMaster {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rawText    String?
+  summary    String?
+  experience String?
+  projects   String?
+  skills     String?
+  education  String?
+  languages  String?
+  links      String?
+}
+
 model AutomationRun {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
