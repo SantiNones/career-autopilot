@@ -28,11 +28,16 @@ export async function POST(
     const prefs = await prisma.candidatePreferences.findFirst();
     const evaluation = scoreJob(rawText, prefs);
 
-    // Clear the needsDescription flag from parsedJson
+    // Clear all warning flags from parsedJson so banners disappear after description is saved.
+    // blocked/blockedReason/textLength come from parseJobFromHtml and remain stale otherwise.
     const existingJson = ((job.parsedJson ?? {}) as Record<string, unknown>);
     const updatedJson: Record<string, unknown> = {
       ...existingJson,
       needsDescription: false,
+      blocked: false,
+      blockedReason: null,
+      textLength: rawText.length,
+      parser: "manual_description_v1",
       descriptionUpdatedAt: new Date().toISOString(),
     };
 

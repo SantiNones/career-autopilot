@@ -163,7 +163,12 @@ export default async function JobDetailPage(props: {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
-              {ev && <ScorePill score={ev.totalScore} />}
+              {ev && (
+                <div className="flex flex-col items-end gap-0.5">
+                  <span className="text-xs text-zinc-400">Job Score</span>
+                  <ScorePill score={ev.totalScore} />
+                </div>
+              )}
               {ev && <LabelBadge label={ev.label} />}
               <StatusBadge status={appStatus} />
             </div>
@@ -238,7 +243,7 @@ export default async function JobDetailPage(props: {
               {/* Top row: score + badges */}
               <div className="mb-5 flex flex-wrap items-center gap-2">
                 <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-bold tabular-nums ${scoreColor}`}>
-                  {fa.confidenceScore}% match
+                  {fa.confidenceScore}% fit confidence
                 </span>
                 <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
                   {fa.recommendedAngle}
