@@ -28,11 +28,20 @@ function extractMetaDescription(html: string): string | undefined {
   return m[1].replace(/\s+/g, " ").trim().slice(0, 300);
 }
 
-function extractH1(html: string): string | undefined {
-  const m = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-  if (!m?.[1]) return undefined;
-  const raw = m[1].replace(/<[^>]+>/g, " ");
-  return raw.replace(/\s+/g, " ").trim().slice(0, 200);
+function extractBestH1(html: string): string | undefined {
+  const h1Re = /<h1[^>]*>([\s\S]*?)<\/h1>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = h1Re.exec(html)) !== null) {
+    const raw = (match[1] ?? "").replace(/<[^>]+>/g, " ");
+    const cleaned = raw.replace(/\s+/g, " ").trim().slice(0, 200);
+    if (!cleaned || cleaned.length < 3) continue;
+    // Skip known generic section headers
+    if (GENERIC_H1_HEADERS.has(cleaned.toLowerCase())) continue;
+    // Skip likely corrupted fragments (single letter or starts with whitespace artifact)
+    if (/^[a-z]{1,2}\s/i.test(cleaned) && cleaned.length < 15) continue;
+    return cleaned;
+  }
+  return undefined;
 }
 
 function detectBlockedContent(text: string, title?: string): {
@@ -77,11 +86,15 @@ const HARD_BLOCKED_HOSTS = new Set([
   "accounts.google.com",
 ]);
 
-const JOB_PATH_KEYWORDS = [
-  "job", "jobs", "career", "careers", "opening", "openings",
-  "position", "positions", "vacancy", "vacancies",
-  "greenhouse", "lever", "ashby", "workable",
-];
+// Generic H1 section headers that are NOT job titles
+const GENERIC_H1_HEADERS = new Set([
+  "job description", "job details", "position description", "role description",
+  "about the role", "about the position", "about this role", "about this position",
+  "job posting", "job listing", "employment opportunity", "vacancy",
+  "overview", "description", "details", "apply now", "apply for this job",
+  "apply for this position", "careers", "career opportunities",
+  "job summary", "position summary", "role summary",
+]);
 
 export function looksLikeUrl(input: string): boolean {
   return /^https?:\/\//i.test(input) || /^[a-z0-9-]+\.[a-z]{2,}/i.test(input);
@@ -136,13 +149,6 @@ export function isLikelyJobUrl(url: string): { ok: true } | { ok: false; reason:
       console.log("[isLikelyJobUrl] REJECTED — LinkedIn URL without /jobs/view/");
       return { ok: false, reason: "LinkedIn URL must contain /jobs/view/" };
     }
-  }
-
-  // 3. For any hostname, the path should contain a job-related keyword
-  const hasJobKeyword = JOB_PATH_KEYWORDS.some((kw) => pathname.includes(`/${kw}`));
-  if (!hasJobKeyword) {
-    console.log("[isLikelyJobUrl] REJECTED — no job keyword in path:", pathname);
-    return { ok: false, reason: "URL path does not look like a job posting" };
   }
 
   console.log("[isLikelyJobUrl] ACCEPTED");
@@ -237,14 +243,12 @@ export function validateJobPage(
     return { valid: false, reason: "Page content too short to be a job posting" };
   }
 
-  // 6. Title should not be a generic homepage title
-  const genericTitles = [
-    "home", "homepage", "index", "start", "welcome", "main", "portal",
-    "dashboard", "account", "profile", "settings", "about us", "contact",
-    "blog", "news", "search", "jobs", "careers", "work with us",
-  ];
-  const titleWords = title.toLowerCase().split(/\s+/);
-  if (genericTitles.some((gt) => titleWords.includes(gt) && titleWords.length <= 3)) {
+  // 6. Reject only if title is an exact match to a known generic homepage title
+  const EXACT_GENERIC_TITLES = new Set([
+    "home", "homepage", "index", "welcome", "main page", "portal",
+    "dashboard", "account", "settings",
+  ]);
+  if (EXACT_GENERIC_TITLES.has(title.toLowerCase().trim())) {
     return { valid: false, reason: "Page title looks like a generic homepage" };
   }
 
@@ -253,9 +257,12 @@ export function validateJobPage(
 
 export function parseJobFromHtml(sourceUrl: string, html: string): ParsedJob {
   const titleFromTitleTag = extractTitle(html);
-  const titleFromH1 = extractH1(html);
-  const title = titleFromH1 ?? titleFromTitleTag;
-  const companyName = guessCompanyFromTitle(title);
+  const titleFromH1 = extractBestH1(html);
+  // Prefer the <title> tag — it typically has "Job Title | Company" format.
+  // Use the filtered H1 as fallback only if the title tag is missing.
+  const title = titleFromTitleTag ?? titleFromH1;
+  // Always extract company from the title tag (H1 rarely contains company name).
+  const companyName = guessCompanyFromTitle(titleFromTitleTag);
   const metaDescription = extractMetaDescription(html);
   const rawText = stripHtml(html);
   const blocked = detectBlockedContent(rawText, title);

@@ -266,12 +266,35 @@ const SENIORITY_SIGNALS: Array<{ label: string; keywords: string[] }> = [
   { label: "Junior", keywords: ["junior", "entry level", "entry-level", "0-2 years", "1+ year", "graduate", "new grad", "intern"] },
 ];
 
+// Strong compound phrases that unambiguously mark a junior role — always win
+const JUNIOR_STRONG = [
+  "junior developer", "junior engineer", "junior software", "junior frontend", "junior backend",
+  "entry-level developer", "entry-level engineer", "entry level developer", "entry level engineer",
+  "graduate developer", "graduate engineer", "graduate position", "graduate role",
+  "intern developer", "intern engineer", "internship", "trainee developer", "trainee engineer",
+  "apprentice developer", "apprentice engineer", "new grad", "fresh graduate",
+  "jr developer", "jr. developer", "jr engineer", "jr. engineer",
+];
+
 function detectSeniority(text: string): string {
   const lower = text.toLowerCase();
+
+  // Strong junior compound signals win immediately
+  if (JUNIOR_STRONG.some((s) => lower.includes(s))) return "Junior";
+
+  // Scoring: accumulate all signal hits
+  const scores: Record<string, number> = {};
   for (const { label, keywords } of SENIORITY_SIGNALS) {
-    if (keywords.some((k) => lower.includes(k))) return label;
+    for (const k of keywords) {
+      if (lower.includes(k)) scores[label] = (scores[label] ?? 0) + 1;
+    }
   }
-  return "Mid";
+
+  // Junior gets a tie-breaking bonus to avoid false senior flags from incidental mentions
+  if (scores["Junior"]) scores["Junior"] += 1;
+
+  const entries = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  return entries[0]?.[0] ?? "Mid";
 }
 
 // ─── Recommended angle ────────────────────────────────────────────────────────

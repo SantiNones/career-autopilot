@@ -36,12 +36,33 @@ function countMatches(text: string, keywords: string[]): number {
 
 function extractRequiredYears(text: string): number | null {
   const t = text.toLowerCase();
-  const m = t.match(/(\d{1,2})\s*\+?\s*(?:years|yrs|años)/i);
-  if (!m?.[1]) return null;
-  const n = Number(m[1]);
-  if (!Number.isFinite(n)) return null;
-  return n;
+  // Only match patterns that explicitly describe candidate experience requirements.
+  // Avoids false positives like "founded 5 years ago" or "Python 3.x".
+  const patterns = [
+    /(\d{1,2})\s*\+?\s*years?\s+of\s+(?:relevant\s+|professional\s+|hands-on\s+|work\s+)?experience/i,
+    /(\d{1,2})\s*\+?\s*years?\s+experience\b/i,
+    /minimum\s+(?:of\s+)?(\d{1,2})\s*\+?\s*years?/i,
+    /at\s+least\s+(\d{1,2})\s*\+?\s*years?/i,
+    /experience\s*[:\-–]\s*(\d{1,2})\s*\+?\s*years?/i,
+    /(\d{1,2})\s*[-–]\s*\d{1,2}\s*years?\s+of\s+experience/i,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m) {
+      const captured = m[1] ?? m[2];
+      if (!captured) continue;
+      const n = Number(captured);
+      if (Number.isFinite(n) && n > 0 && n < 30) return n;
+    }
+  }
+  return null;
 }
+
+const JUNIOR_TITLE_SIGNALS = [
+  "junior", "jr.", " jr ", "entry level", "entry-level", "entry_level",
+  "graduate developer", "graduate engineer", "new grad",
+  "intern", "internship", "trainee", "apprentice", "fresher",
+];
 
 function looksBlockedOrLowValue(text: string): { blocked: boolean; reason: string | null } {
   const t = text.toLowerCase();
@@ -79,8 +100,15 @@ export function scoreJob(text: string, prefs: CandidatePreferences | null): JobS
 
   const years = extractRequiredYears(text);
 
+  // Check first 5 lines for explicit junior/entry-level signals — these override year-based scoring.
+  const titleArea = text.split(/\n/).slice(0, 5).join(" ").toLowerCase();
+  const isExplicitlyJunior = JUNIOR_TITLE_SIGNALS.some((s) => titleArea.includes(s));
+
   let seniorityFit = 70;
-  if (years !== null) {
+  if (isExplicitlyJunior) {
+    seniorityFit = 90;
+    reasons.push("Role explicitly targets junior/entry-level candidates");
+  } else if (years !== null) {
     if (years >= 5) {
       seniorityFit = 10;
       risks.push("Role looks senior (5+ years required)");
@@ -95,14 +123,16 @@ export function scoreJob(text: string, prefs: CandidatePreferences | null): JobS
 
   const stackFit = clamp(40 + pos * 12 - neg * 10);
   if (stackFit >= 70) reasons.push("Tech stack keywords match");
-  if (neg > 0) risks.push("Contains senior/lead keywords");
+  if (neg > 0 && !isExplicitlyJunior) risks.push("Some keywords may indicate a senior or specialised role");
 
   const domainFit = 55;
   const languageFit = 60;
   const geographyFit = 60;
   const salaryFit = 50;
   const screeningFit = clamp(60 + pos * 6 - neg * 5);
-  const honestyFit = clamp(65 - Math.max(0, (years ?? 0) - 2) * 15);
+  const honestyFit = isExplicitlyJunior
+    ? 80
+    : clamp(65 - Math.max(0, (years ?? 0) - 2) * 15);
   if (honestyFit < 40) gaps.push("Experience gap vs requirements");
 
   const effortReward = clamp(55 + (stackFit - 50) / 2 - (seniorityFit < 30 ? 20 : 0));

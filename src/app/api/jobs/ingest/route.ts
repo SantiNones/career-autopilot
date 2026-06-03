@@ -35,57 +35,73 @@ export async function POST(req: Request) {
       | ReturnType<typeof parseJobFromHtml>
       | { title?: string; companyName?: string; rawText: string; parsedJson: object };
     let rawHtml: string | null = null;
+    let source: string;
 
-    const input = url || pastedText || "";
-    const ingestCheck = validateIngestInput(input);
-    if (!ingestCheck.ok) {
-      return NextResponse.json(
-        { error: "This URL does not look like a job posting. Paste the job description manually." },
-        { status: 400 },
-      );
-    }
+    // Bug 1 fix: if substantial pasted text is provided (>=200 chars), it wins —
+    // skip URL fetching entirely; URL is kept only as a sourceUrl identifier.
+    const MEANINGFUL_TEXT_THRESHOLD = 200;
+    const hasSubstantialText = !!pastedText && pastedText.length >= MEANINGFUL_TEXT_THRESHOLD;
 
-    if (ingestCheck.isUrl) {
-      const normalizedUrl = ingestCheck.url;
-
-      const res = await fetch(normalizedUrl, {
-        redirect: "follow",
-        headers: {
-          "user-agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          accept: "text/html,application/xhtml+xml",
-        },
-      });
-
-      if (!res.ok) {
-        return NextResponse.json(
-          { error: `Failed to fetch url (status ${res.status})` },
-          { status: 400 },
-        );
-      }
-
-      const html = await res.text();
-      rawHtml = html;
-      parsed = parseJobFromHtml(normalizedUrl, html);
-
-      const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
-      if (!validation.valid) {
+    if (hasSubstantialText) {
+      const firstLine = pastedText!.split(/\r?\n/)[0]?.trim() ?? "";
+      parsed = {
+        title: firstLine.length > 5 && firstLine.length < 200 ? firstLine : undefined,
+        companyName: undefined,
+        rawText: pastedText!,
+        parsedJson: { sourceUrl, parser: "pasted_v1" },
+      };
+      source = url ? new URL(url).hostname : "manual";
+    } else {
+      const input = url || pastedText || "";
+      const ingestCheck = validateIngestInput(input);
+      if (!ingestCheck.ok) {
         return NextResponse.json(
           { error: "This URL does not look like a job posting. Paste the job description manually." },
           { status: 400 },
         );
       }
-    } else {
-      const firstLine = (pastedText ?? "").split(/\r?\n/)[0]?.trim();
-      parsed = {
-        title: firstLine?.slice(0, 200) || undefined,
-        companyName: undefined,
-        rawText: pastedText ?? "",
-        parsedJson: {
-          sourceUrl,
-          parser: "pasted_v1",
-        },
-      };
+
+      if (ingestCheck.isUrl) {
+        const normalizedUrl = ingestCheck.url;
+        source = new URL(normalizedUrl).hostname;
+
+        const res = await fetch(normalizedUrl, {
+          redirect: "follow",
+          headers: {
+            "user-agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            accept: "text/html,application/xhtml+xml",
+          },
+        });
+
+        if (!res.ok) {
+          return NextResponse.json(
+            { error: `Failed to fetch url (status ${res.status})` },
+            { status: 400 },
+          );
+        }
+
+        const html = await res.text();
+        rawHtml = html;
+        parsed = parseJobFromHtml(normalizedUrl, html);
+
+        const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
+        if (!validation.valid) {
+          return NextResponse.json(
+            { error: "This URL does not look like a job posting. Paste the job description manually." },
+            { status: 400 },
+          );
+        }
+      } else {
+        source = "manual";
+        const firstLine = (pastedText ?? "").split(/\r?\n/)[0]?.trim();
+        parsed = {
+          title: firstLine?.slice(0, 200) || undefined,
+          companyName: undefined,
+          rawText: pastedText ?? "",
+          parsedJson: { sourceUrl, parser: "pasted_v1" },
+        };
+      }
     }
 
     const prefs = await prisma.candidatePreferences.findFirst();
@@ -95,7 +111,7 @@ export async function POST(req: Request) {
     const job = await prisma.jobPosting.create({
       data: {
         sourceUrl,
-        source: ingestCheck.isUrl ? new URL(ingestCheck.url).hostname : "manual",
+        source,
         title: parsed.title,
         companyName: parsed.companyName,
         rawHtml,
