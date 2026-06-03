@@ -235,9 +235,9 @@ export async function generateOpenAiMaterials(args: {
 
   // ── Call OpenAI ──────────────────────────────────────────────────────────────
   const isGpt5 = model.startsWith("gpt-5") || model.startsWith("o");
-  const tokenParam = isGpt5
+  const extraParams = isGpt5
     ? { max_completion_tokens: 3500 }
-    : { max_tokens: 3500 };
+    : { max_tokens: 3500, temperature: 0.35 };
 
   const response = await client.chat.completions.create({
     model,
@@ -246,8 +246,7 @@ export async function generateOpenAiMaterials(args: {
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userContent },
     ],
-    temperature: 0.35,
-    ...tokenParam,
+    ...extraParams,
   });
 
   const raw = response.choices[0]?.message?.content ?? "{}";
