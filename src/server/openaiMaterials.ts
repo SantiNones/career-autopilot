@@ -53,6 +53,21 @@ type GeneratedMaterials = {
   screeningAnswers: string;
 };
 
+// ─── Robust JSON extractor (handles markdown fences and surrounding text) ──────
+
+function extractJson(raw: string): string {
+  // Strip ```json ... ``` or ``` ... ``` fences
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch?.[1]) return fenceMatch[1].trim();
+
+  // Extract first { ... } block
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start !== -1 && end > start) return raw.slice(start, end + 1);
+
+  return raw;
+}
+
 function str(v: unknown): string {
   if (!v) return "";
   if (typeof v === "string") return v;
@@ -76,49 +91,47 @@ OUTPUT: Return ONLY a single valid JSON object with exactly these four string ke
 tailoredCv, coverLetter, recruiterMessage, screeningAnswers.
 
 ────────────────────────────────────────
-tailoredCv format (~500–700 words, plain text):
+tailoredCv format (STRICT max 400 words, plain text):
   [Full name]
   [Single headline] · [Location] · [Languages if any]
   [Links if any]
 
   SUMMARY
-  2–3 sentences, role-specific, no generic openers.
+  2 sentences maximum, role-specific.
 
   SKILLS
-  Up to 3 role-relevant categories, max 6 items each.
+  Up to 3 role-relevant categories, max 5 items each.
   Format: CategoryName\n- item\n- item
 
   SELECTED PROJECTS
-  Top 2–3 projects with highest overlap to the role.
-  Format per project: Project Name\n• bullet\n• bullet (max 3 bullets, ~1 sentence each)
+  Top 2 projects only.
+  Format: Project Name\n• bullet\n• bullet (max 2 bullets per project)
 
   EXPERIENCE
-  Max 3 roles. Format per role:
+  Max 2 roles. Format:
   Role Title
   Company | Dates
-  • achievement (max 2 bullets)
+  • achievement (1 bullet only)
 
   EDUCATION
-  Degree, Institution, Year (if provided)
+  Degree, Institution, Year (one line)
 
 ────────────────────────────────────────
-coverLetter format (max 300 words, plain text):
+coverLetter format (STRICT max 200 words, plain text):
   Dear [Company] Hiring Team,
 
-  [3–4 short paragraphs: hook, why this role matches candidate's background, one specific project or achievement, closing CTA]
+  [2–3 short paragraphs: hook, why candidate fits, closing CTA]
 
   Best regards,
   [Name]
 
 ────────────────────────────────────────
-recruiterMessage format (max 120 words, plain text):
-  [Greeting],
+recruiterMessage format (STRICT max 80 words, plain text):
+  Hi,
 
-  [1–2 sentences: who the candidate is + their best matching angle for this role]
-  [1 sentence: mention the most relevant project or skill]
+  [1–2 sentences: who candidate is + best matching angle]
   [Links if available]
-
-  [Clear CTA sentence]
+  [Clear CTA]
 
   Best,
   [Name]
@@ -235,29 +248,70 @@ export async function generateOpenAiMaterials(args: {
 
   // ── Call OpenAI ──────────────────────────────────────────────────────────────
   const isGpt5 = model.startsWith("gpt-5") || model.startsWith("o");
-  const extraParams = isGpt5
-    ? { max_completion_tokens: 3500 }
-    : { max_tokens: 3500, temperature: 0.35 };
 
-  const response = await client.chat.completions.create({
-    model,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userContent },
-    ],
-    ...extraParams,
-  });
+  const MATERIALS_SCHEMA = {
+    type: "object",
+    properties: {
+      tailoredCv: { type: "string" },
+      coverLetter: { type: "string" },
+      recruiterMessage: { type: "string" },
+      screeningAnswers: { type: "string" },
+    },
+    required: ["tailoredCv", "coverLetter", "recruiterMessage", "screeningAnswers"],
+    additionalProperties: false,
+  } as const;
 
-  const raw = response.choices[0]?.message?.content ?? "{}";
+  let raw: string;
+
+  if (isGpt5) {
+    // Responses API with json_schema strict — guaranteed valid JSON from GPT-5
+    const resp = await client.responses.create({
+      model,
+      instructions: SYSTEM_PROMPT,
+      input: userContent,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "application_materials",
+          schema: MATERIALS_SCHEMA,
+          strict: true,
+        },
+      },
+      max_output_tokens: 8000,
+    });
+    raw = resp.output_text ?? "{}";
+    console.log(`[openai-materials] model:${model} source:responses-api length:${raw.length} endsWithBrace:${raw.trim().endsWith("}")}`)
+    console.log(`[openai-materials] raw last 300: ${raw.slice(-300)}`);
+  } else {
+    // Chat Completions API for older models
+    const resp = await client.chat.completions.create({
+      model,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userContent },
+      ],
+      max_tokens: 3500,
+      temperature: 0.35,
+    });
+    raw = resp.choices[0]?.message?.content ?? "{}";
+    console.log(`[openai-materials] model:${model} source:chat-completions finish:${resp.choices[0]?.finish_reason ?? "?"} length:${raw.length} endsWithBrace:${raw.trim().endsWith("}")}`)
+    console.log(`[openai-materials] raw last 300: ${raw.slice(-300)}`);
+  }
+
+  // ── Parse — strip markdown fences and extract JSON if needed ─────────────────
+  const cleaned = extractJson(raw);
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(cleaned) as Record<string, unknown>;
   } catch {
-    throw new Error("OpenAI returned invalid JSON");
+    throw new Error(
+      `OpenAI JSON parse failed — length:${raw.length} startsWithBrace:${raw.trim().startsWith("{")} endsWithBrace:${raw.trim().endsWith("}")} — last 300: ${raw.slice(-300)}`,
+    );
   }
 
+  // ── Per-field extraction — only throw if ALL are empty ────────────────────────
   const tailoredCv = typeof parsed.tailoredCv === "string" ? parsed.tailoredCv.trim() : "";
   const coverLetter = typeof parsed.coverLetter === "string" ? parsed.coverLetter.trim() : "";
   const recruiterMessage =
@@ -265,8 +319,8 @@ export async function generateOpenAiMaterials(args: {
   const screeningAnswers =
     typeof parsed.screeningAnswers === "string" ? parsed.screeningAnswers.trim() : "";
 
-  if (!tailoredCv || !coverLetter) {
-    throw new Error("OpenAI returned incomplete materials");
+  if (!tailoredCv && !coverLetter && !recruiterMessage && !screeningAnswers) {
+    throw new Error("OpenAI returned materials with all fields empty");
   }
 
   return { tailoredCv, coverLetter, recruiterMessage, screeningAnswers };
