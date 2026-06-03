@@ -234,6 +234,11 @@ export async function generateOpenAiMaterials(args: {
     .trim();
 
   // ── Call OpenAI ──────────────────────────────────────────────────────────────
+  const isGpt5 = model.startsWith("gpt-5") || model.startsWith("o");
+  const tokenParam = isGpt5
+    ? { max_completion_tokens: 3500 }
+    : { max_tokens: 3500 };
+
   const response = await client.chat.completions.create({
     model,
     response_format: { type: "json_object" },
@@ -242,7 +247,7 @@ export async function generateOpenAiMaterials(args: {
       { role: "user", content: userContent },
     ],
     temperature: 0.35,
-    max_tokens: 3500,
+    ...tokenParam,
   });
 
   const raw = response.choices[0]?.message?.content ?? "{}";
