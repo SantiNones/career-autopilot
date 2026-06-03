@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { DeleteJobButton } from "@/components/DeleteJobButton";
 import { MaterialsSection } from "@/components/MaterialsSection";
 import { StatusControls, StatusBadge } from "@/components/StatusControls";
+import { UpdateDescriptionForm } from "@/components/UpdateDescriptionForm";
 import type { AppStatus } from "@/components/StatusControls";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +109,7 @@ export default async function JobDetailPage(props: {
   const blockedReason = (parsed?.["blockedReason"] as string | undefined) ?? undefined;
   const textLength =
     (parsed?.["textLength"] as number | undefined) ?? job.rawText?.length ?? 0;
+  const needsDescription = Boolean(parsed?.["needsDescription"]);
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -168,21 +170,35 @@ export default async function JobDetailPage(props: {
           </div>
         </div>
 
-        {/* Parsing warning */}
-        {(blocked || textLength < 800) && (
+        {/* Needs-description banner — URL was parsed but no usable content found */}
+        {needsDescription && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
+            <h3 className="text-sm font-semibold text-amber-900">
+              ⚠ Job description not available
+            </h3>
+            <p className="mt-1 text-sm text-amber-800">
+              This job URL could not be parsed reliably. Paste the full job description below to
+              re-analyze it — scores, fit analysis, and generated materials will update automatically.
+            </p>
+            <p className="mt-1 text-xs text-amber-700">
+              Some job boards block automated reading. If parsing fails, paste the job description manually.
+            </p>
+            <UpdateDescriptionForm jobId={job.id} />
+          </div>
+        )}
+
+        {/* Lighter parsing warning for non-needs-description blocked/short pages */}
+        {!needsDescription && (blocked || textLength < 800) && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
             <h3 className="text-sm font-semibold text-amber-900">⚠ Parsing warning</h3>
             <p className="mt-1 text-sm text-amber-800">
               This page may be blocked or extracted text is too short to score reliably.
               {blockedReason ? ` Reason: ${blockedReason}.` : ""}
             </p>
-            <p className="mt-2 text-sm text-amber-800">
-              Recommended: copy and paste the full job description using the{" "}
-              <Link href="/" className="font-medium underline">
-                dashboard ingest form
-              </Link>
-              .
+            <p className="mt-1 text-xs text-amber-700">
+              Some job boards block automated reading. Paste the full job description below to improve analysis.
             </p>
+            <UpdateDescriptionForm jobId={job.id} />
           </div>
         )}
 

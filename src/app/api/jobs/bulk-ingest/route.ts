@@ -40,9 +40,11 @@ export async function POST(req: Request) {
 
         let rawHtml: string | null = null;
         let parsed: { title?: string; companyName?: string; rawText: string; parsedJson: object };
+        let needsDescription = false;
 
         if (ingestCheck.isUrl) {
           const normalizedUrl = ingestCheck.url;
+          const hostname = new URL(normalizedUrl).hostname;
 
           const res = await fetch(normalizedUrl, {
             redirect: "follow",
@@ -53,17 +55,40 @@ export async function POST(req: Request) {
             },
           });
           if (!res.ok) {
-            results.push({ error: `HTTP ${res.status}`, item: item.slice(0, 80) });
-            continue;
-          }
-          const html = await res.text();
-          rawHtml = html;
-          parsed = parseJobFromHtml(normalizedUrl, html);
+            // Blocked/unreachable — create a needs-description record instead of skipping.
+            needsDescription = true;
+            parsed = {
+              title: "Needs manual job description",
+              companyName: hostname,
+              rawText: "",
+              parsedJson: {
+                sourceUrl,
+                parser: "url_blocked_v1",
+                needsDescription: true,
+                fetchStatus: res.status,
+              },
+            };
+          } else {
+            const html = await res.text();
+            rawHtml = html;
+            parsed = parseJobFromHtml(normalizedUrl, html);
 
-          const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
-          if (!validation.valid) {
-            results.push({ invalid: true, error: validation.reason, item: item.slice(0, 80) });
-            continue;
+            const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
+            if (!validation.valid) {
+              // Content unverifiable — keep scraped content but flag for manual input.
+              needsDescription = true;
+              const existingJson = (parsed.parsedJson ?? {}) as Record<string, unknown>;
+              parsed = {
+                ...parsed,
+                title: parsed.title ?? "Needs manual job description",
+                companyName: parsed.companyName ?? hostname,
+                parsedJson: {
+                  ...existingJson,
+                  needsDescription: true,
+                  validationReason: validation.reason,
+                },
+              };
+            }
           }
         } else {
           const firstLine = item.split(/\r?\n/)[0]?.trim();
@@ -74,7 +99,14 @@ export async function POST(req: Request) {
           };
         }
 
-        const evaluation = scoreJob(parsed.rawText, prefs);
+        const evaluation = scoreJob(parsed.rawText || "", prefs);
+        if (needsDescription) {
+          evaluation.risks = [
+            "Needs manual job description — paste the full job description to re-analyze",
+            ...evaluation.risks,
+          ];
+          if (evaluation.label === "APPLY") evaluation.label = "MAYBE";
+        }
 
         const job = await prisma.jobPosting.create({
           data: {

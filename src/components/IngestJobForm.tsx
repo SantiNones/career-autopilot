@@ -75,7 +75,8 @@ export function IngestJobForm() {
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
       <p className="text-xs text-zinc-400">
-        Tip: LinkedIn often blocks scrapers — try company career pages directly.
+        Some job boards block automated reading — if parsing fails, a job record is still created
+        so you can paste the full description manually on the job detail page.
       </p>
     </form>
   );

@@ -36,8 +36,9 @@ export async function POST(req: Request) {
       | { title?: string; companyName?: string; rawText: string; parsedJson: object };
     let rawHtml: string | null = null;
     let source: string;
+    let needsDescription = false;
 
-    // Bug 1 fix: if substantial pasted text is provided (>=200 chars), it wins —
+    // If substantial pasted text is provided (>=200 chars), it wins —
     // skip URL fetching entirely; URL is kept only as a sourceUrl identifier.
     const MEANINGFUL_TEXT_THRESHOLD = 200;
     const hasSubstantialText = !!pastedText && pastedText.length >= MEANINGFUL_TEXT_THRESHOLD;
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
       const input = url || pastedText || "";
       const ingestCheck = validateIngestInput(input);
       if (!ingestCheck.ok) {
+        // Hard-blocked domains (google, github, etc.) — still reject with 400.
         return NextResponse.json(
           { error: "This URL does not look like a job posting. Paste the job description manually." },
           { status: 400 },
@@ -75,22 +77,40 @@ export async function POST(req: Request) {
         });
 
         if (!res.ok) {
-          return NextResponse.json(
-            { error: `Failed to fetch url (status ${res.status})` },
-            { status: 400 },
-          );
-        }
+          // Fetch failed (blocked/redirected to login) — create a needs-description record.
+          needsDescription = true;
+          parsed = {
+            title: "Needs manual job description",
+            companyName: source,
+            rawText: "",
+            parsedJson: {
+              sourceUrl,
+              parser: "url_blocked_v1",
+              needsDescription: true,
+              fetchStatus: res.status,
+            },
+          };
+        } else {
+          const html = await res.text();
+          rawHtml = html;
+          parsed = parseJobFromHtml(normalizedUrl, html);
 
-        const html = await res.text();
-        rawHtml = html;
-        parsed = parseJobFromHtml(normalizedUrl, html);
-
-        const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
-        if (!validation.valid) {
-          return NextResponse.json(
-            { error: "This URL does not look like a job posting. Paste the job description manually." },
-            { status: 400 },
-          );
+          const validation = validateJobPage(normalizedUrl, parsed.title, parsed.rawText);
+          if (!validation.valid) {
+            // Content could not be verified as a job page — keep what we have but flag it.
+            needsDescription = true;
+            const existingJson = (parsed.parsedJson ?? {}) as Record<string, unknown>;
+            parsed = {
+              ...parsed,
+              title: parsed.title ?? "Needs manual job description",
+              companyName: parsed.companyName ?? source,
+              parsedJson: {
+                ...existingJson,
+                needsDescription: true,
+                validationReason: validation.reason,
+              },
+            };
+          }
         }
       } else {
         source = "manual";
@@ -106,7 +126,14 @@ export async function POST(req: Request) {
 
     const prefs = await prisma.candidatePreferences.findFirst();
 
-    const evaluation = scoreJob(parsed.rawText, prefs);
+    const evaluation = scoreJob(parsed.rawText || "", prefs);
+    if (needsDescription) {
+      evaluation.risks = [
+        "Needs manual job description — paste the full job description to re-analyze",
+        ...evaluation.risks,
+      ];
+      if (evaluation.label === "APPLY") evaluation.label = "MAYBE";
+    }
 
     const job = await prisma.jobPosting.create({
       data: {
