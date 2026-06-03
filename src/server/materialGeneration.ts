@@ -179,6 +179,141 @@ function buildRoleSummary(
   return `${seniority}${opener} ${skillPhrase}${strengthLine}`.trim();
 }
 
+// ─── Generic phrase scrubber ─────────────────────────────────────────────────
+
+const PHRASE_SUBS: Array<[RegExp, string]> = [
+  [/\bfocused on\b/gi, "specialising in"],
+  [/\bpassionate about\b/gi, "experienced in"],
+  [/\bability to\b/gi, "experience"],
+  [/\bproduct.oriented mindset\b/gi, ""],
+  [/\bhighly motivated\b/gi, ""],
+  [/\bteam player\b/gi, ""],
+  [/\bself.starter\b/gi, ""],
+];
+
+function scrubGenericPhrases(text: string): string {
+  let s = text;
+  for (const [pattern, replacement] of PHRASE_SUBS) {
+    s = s.replace(pattern, replacement);
+  }
+  return s.replace(/  +/g, " ").replace(/ ([.,])/g, "$1").trim();
+}
+
+// ─── Compact project block: name + max 3 bullets ─────────────────────────────
+
+function compactProjectBlock(block: string): string {
+  const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return "";
+
+  const name = lines[0].replace(/^[#*•·\-]\s*/, "").trim();
+  const rest = lines.slice(1);
+  const bullets: string[] = [];
+
+  for (const line of rest) {
+    if (bullets.length >= 3) break;
+    const isBullet = /^[-•*·]/.test(line);
+    const content = line.replace(/^[-•*·]\s*/, "").trim();
+    if (content.length < 20) continue;
+
+    if (isBullet) {
+      const sentence = content.split(/(?<=[.!?])\s+/)[0] ?? content;
+      const trimmed = sentence.length > 120 ? sentence.slice(0, 117) + "..." : sentence;
+      bullets.push(`• ${trimmed}`);
+    } else {
+      // Prose — split into sentences, each becomes a bullet
+      const sentences = content.split(/(?<=[.!?])\s+/).filter((s) => s.length > 20);
+      for (const sentence of sentences) {
+        if (bullets.length >= 3) break;
+        const trimmed = sentence.length > 120 ? sentence.slice(0, 117) + "..." : sentence;
+        bullets.push(`• ${trimmed}`);
+      }
+    }
+  }
+
+  if (!bullets.length) return name;
+  return `${name}\n${bullets.join("\n")}`;
+}
+
+// ─── Compact experience: max 3 roles × 2 bullets each ────────────────────────
+
+function compactExperience(rawExp: string): string {
+  if (!rawExp.trim()) return "";
+
+  const blocks = rawExp.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  const source = blocks.length > 0 ? blocks : [rawExp];
+
+  const compacted = source
+    .slice(0, 3)
+    .map((block) => {
+      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!lines.length) return "";
+
+      const title = lines[0];
+      // Detect a company/date subtitle: contains | or – or a 4-digit year
+      const hasSubtitle =
+        lines.length > 1 && /[|–\-]|\b(20\d{2}|19\d{2})\b/.test(lines[1] ?? "");
+      const subtitle = hasSubtitle ? lines[1] : null;
+      const bodyStart = hasSubtitle ? 2 : 1;
+
+      const bullets: string[] = [];
+      for (const line of lines.slice(bodyStart)) {
+        if (bullets.length >= 2) break;
+        const cleaned = line.replace(/^[-•*·]\s*/, "").trim();
+        if (cleaned.length < 15) continue;
+        const sentence = cleaned.split(/(?<=[.!?])\s+/)[0] ?? cleaned;
+        const trimmed = sentence.length > 120 ? sentence.slice(0, 117) + "..." : sentence;
+        bullets.push(`• ${trimmed}`);
+      }
+
+      const parts = [title];
+      if (subtitle) parts.push(subtitle);
+      bullets.forEach((b) => parts.push(b));
+      return parts.join("\n");
+    })
+    .filter(Boolean);
+
+  return compacted.join("\n\n");
+}
+
+// ─── Role-priority category ordering ─────────────────────────────────────────
+
+const ROLE_CATEGORY_PRIORITY: Record<string, string[]> = {
+  frontend: ["Frontend", "Tools", "Cloud & DevOps"],
+  "front-end": ["Frontend", "Tools"],
+  backend: ["Backend", "Database", "Tools"],
+  "back-end": ["Backend", "Database", "Tools"],
+  "full-stack": ["Frontend", "Backend", "Tools"],
+  fullstack: ["Frontend", "Backend", "Tools"],
+  support: ["Tools", "Backend", "Other"],
+  automation: ["Backend", "Tools", "Cloud & DevOps"],
+  devops: ["Cloud & DevOps", "Backend", "Tools"],
+  data: ["Database", "Backend", "Tools"],
+  mobile: ["Frontend", "Tools", "Backend"],
+};
+
+function prioritizeCategories(
+  groups: Array<[string, string[]]>,
+  jobFocus: string,
+): Array<[string, string[]]> {
+  const focus = jobFocus.toLowerCase();
+  let priority: string[] | null = null;
+  for (const [key, cats] of Object.entries(ROLE_CATEGORY_PRIORITY)) {
+    if (focus.includes(key)) {
+      priority = cats;
+      break;
+    }
+  }
+  if (!priority) return groups;
+
+  const prioritySet = new Set(priority);
+  return [
+    ...priority
+      .map((p) => groups.find(([name]) => name === p))
+      .filter((g): g is [string, string[]] => g !== undefined),
+    ...groups.filter(([name]) => !prioritySet.has(name)),
+  ];
+}
+
 // ─── Skills: grouped sections ─────────────────────────────────────────────────
 
 const SKILL_CATEGORY_MAP: Array<{ name: string; keywords: string[] }> = [
@@ -224,6 +359,7 @@ const SKILL_CATEGORY_MAP: Array<{ name: string; keywords: string[] }> = [
 function buildSkillsSection(
   rawSkills: string,
   matchingSkills: string[],
+  jobFocus: string,
 ): string {
   if (!rawSkills.trim() && !matchingSkills.length) return "";
 
@@ -246,8 +382,8 @@ function buildSkillsSection(
       }
     }
     if (categories.length > 0) {
-      return categories
-        .slice(0, 4)
+      return prioritizeCategories(categories, jobFocus)
+        .slice(0, 3)
         .map(([cat, skills]) =>
           `${cat}\n${skills.slice(0, 6).map((s) => `- ${s}`).join("\n")}`,
         )
@@ -278,8 +414,8 @@ function buildSkillsSection(
     return fallback.map((s) => `- ${s}`).join("\n");
   }
 
-  return groups
-    .slice(0, 4)
+  return prioritizeCategories(groups, jobFocus)
+    .slice(0, 3)
     .map(([cat, catSkills]) => `${cat}\n${catSkills.map((s) => `- ${s}`).join("\n")}`)
     .join("\n\n");
 }
@@ -309,56 +445,59 @@ export function generateTailoredCvV2(args: {
     str(prefs?.targetTitles).split(",")[0]?.trim() ||
     "Software Developer";
 
-  // ── Summary: role-specific, no filler, no "Applying for..." ──────────────
-  const summary = buildRoleSummary(resume, fitAnalysis);
+  // ── Summary: role-specific, generic phrases scrubbed ─────────────────────
+  const summary = scrubGenericPhrases(buildRoleSummary(resume, fitAnalysis));
 
-  // ── Skills: clean grouped sections ───────────────────────────────────────
-  const skillsSection = buildSkillsSection(resume?.skills ?? "", fitAnalysis.matchingSkills);
+  // ── Skills: role-prioritised, max 3 categories × 6 items ─────────────────
+  const skillsSection = buildSkillsSection(
+    resume?.skills ?? "",
+    fitAnalysis.matchingSkills,
+    fitAnalysis.jobFocus,
+  );
 
-  // ── Projects: top 2 by keyword + skill overlap ────────────────────────────
+  // ── Projects: top 2, compact bullet format (max 3 bullets each) ──────────
   const projectBlocks = pickProjectBlocks(
     resume?.projects ?? "",
     [...fitAnalysis.matchingProjects, ...fitAnalysis.matchingSkills],
     2,
-  );
+  )
+    .map(compactProjectBlock)
+    .filter(Boolean);
 
-  // ── Experience: concise, first 20 non-empty lines ─────────────────────────
-  const expLines = (resume?.experience ?? "")
-    .split("\n")
-    .filter((l) => l.trim().length > 0);
-  const conciseExp = expLines.slice(0, 20).join("\n");
+  // ── Experience: max 3 roles, max 2 bullets each ───────────────────────────
+  const expSection = compactExperience(resume?.experience ?? "");
 
-  // ── Assemble — only include sections with real content, no placeholders ───
+  // ── Assemble — double blank lines between sections for readability ─────────
   const parts: string[] = [];
 
   parts.push(name);
   parts.push([headline, location, langStr].filter(Boolean).join(" · "));
   if (links) parts.push(links);
 
-  parts.push("");
+  parts.push("", "");
   parts.push("SUMMARY");
   parts.push(summary);
 
   if (skillsSection) {
-    parts.push("");
+    parts.push("", "");
     parts.push("SKILLS");
     parts.push(skillsSection);
   }
 
   if (projectBlocks.length > 0) {
-    parts.push("");
+    parts.push("", "");
     parts.push("SELECTED PROJECTS");
     parts.push(projectBlocks.join("\n\n"));
   }
 
-  if (conciseExp) {
-    parts.push("");
+  if (expSection) {
+    parts.push("", "");
     parts.push("EXPERIENCE");
-    parts.push(conciseExp);
+    parts.push(expSection);
   }
 
   if (education) {
-    parts.push("");
+    parts.push("", "");
     parts.push("EDUCATION");
     parts.push(education);
   }
