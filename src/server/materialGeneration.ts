@@ -100,6 +100,190 @@ function pickProjectBlocks(
     .map((x) => x.block);
 }
 
+// ─── Role-specific summary templates ─────────────────────────────────────────
+
+const ROLE_FOCUS_TEMPLATES: Array<{ keys: string[]; opener: string }> = [
+  {
+    keys: ["frontend", "front-end", "front end", "react developer", "vue", "angular", "ui developer", "interface"],
+    opener: "Frontend developer building responsive, accessible interfaces with modern component frameworks.",
+  },
+  {
+    keys: ["backend", "back-end", "back end", "api developer", "server-side"],
+    opener: "Backend developer designing robust APIs, data pipelines, and server-side systems.",
+  },
+  {
+    keys: ["full-stack", "fullstack", "full stack"],
+    opener: "Full-stack developer delivering end-to-end features across frontend and backend.",
+  },
+  {
+    keys: ["support", "customer support", "technical support", "helpdesk", "service desk"],
+    opener: "Technical support specialist bridging users and engineering teams to resolve issues efficiently.",
+  },
+  {
+    keys: ["automation", "workflow", "rpa", "n8n", "zapier", "ai automation", "process"],
+    opener: "Automation specialist streamlining business workflows with code, APIs, and AI-assisted tooling.",
+  },
+  {
+    keys: ["devops", "sre", "infrastructure", "cloud engineer", "platform engineer"],
+    opener: "DevOps engineer managing infrastructure, CI/CD pipelines, and cloud deployment environments.",
+  },
+  {
+    keys: ["data", "analytics", "machine learning", "data engineer", "ml engineer"],
+    opener: "Data-focused developer building analytical pipelines and data-driven product features.",
+  },
+  {
+    keys: ["mobile", "ios", "android", "react native", "flutter"],
+    opener: "Mobile developer building cross-platform and native applications for iOS and Android.",
+  },
+];
+
+function pickRoleOpener(jobFocus: string, matchingSkills: string[]): string {
+  const needle = `${jobFocus} ${matchingSkills.join(" ")}`.toLowerCase();
+  for (const { keys, opener } of ROLE_FOCUS_TEMPLATES) {
+    if (keys.some((k) => needle.includes(k))) return opener;
+  }
+  return "Software developer building production systems with a pragmatic, end-to-end approach.";
+}
+
+function buildRoleSummary(
+  resume: Resume | null,
+  fitAnalysis: FitAnalysisInput,
+): string {
+  const masterSummary = resume?.summary?.trim() ?? "";
+  const seniority =
+    fitAnalysis.seniorityDetected && fitAnalysis.seniorityDetected !== "Mid"
+      ? `${fitAnalysis.seniorityDetected} `
+      : "";
+
+  const topSkills = fitAnalysis.matchingSkills.slice(0, 4);
+  const skillPhrase = topSkills.length > 0 ? `Skilled in ${topSkills.join(", ")}.` : "";
+
+  // Use first 2 sentences of master summary when it's substantial
+  if (masterSummary.length > 80) {
+    const sentences = masterSummary.split(/(?<=[.!?])\s+/);
+    const base = sentences.slice(0, 2).join(" ").trim();
+    return skillPhrase ? `${base} ${skillPhrase}` : base;
+  }
+
+  const opener = pickRoleOpener(fitAnalysis.jobFocus, fitAnalysis.matchingSkills);
+
+  // Only include a strength if it's substantive, not an internal note
+  const strength = fitAnalysis.strengths.find(
+    (s) =>
+      s.length > 20 &&
+      !s.toLowerCase().startsWith("clarify") &&
+      !s.toLowerCase().startsWith("note:"),
+  );
+  const strengthLine = strength ? ` ${strength}.` : "";
+
+  return `${seniority}${opener} ${skillPhrase}${strengthLine}`.trim();
+}
+
+// ─── Skills: grouped sections ─────────────────────────────────────────────────
+
+const SKILL_CATEGORY_MAP: Array<{ name: string; keywords: string[] }> = [
+  {
+    name: "Frontend",
+    keywords: [
+      "react", "vue", "angular", "svelte", "typescript", "javascript", "html", "css",
+      "next.js", "nuxt", "tailwind", "webpack", "vite", "redux", "zustand", "sass",
+      "scss", "storybook", "jest", "testing library",
+    ],
+  },
+  {
+    name: "Backend",
+    keywords: [
+      "python", "node.js", "node", "express", "flask", "django", "fastapi", "ruby",
+      "rails", "java", "spring", "php", "go", "rust", "c#", ".net", "nestjs",
+      "graphql", "rest", "api",
+    ],
+  },
+  {
+    name: "Database",
+    keywords: [
+      "postgresql", "postgres", "mysql", "mongodb", "redis", "sqlite", "sql",
+      "prisma", "supabase", "firebase", "dynamodb", "elasticsearch",
+    ],
+  },
+  {
+    name: "Cloud & DevOps",
+    keywords: [
+      "aws", "gcp", "azure", "docker", "kubernetes", "terraform", "ci/cd",
+      "github actions", "gitlab ci", "vercel", "netlify", "linux", "bash", "nginx",
+    ],
+  },
+  {
+    name: "Tools",
+    keywords: [
+      "git", "github", "gitlab", "figma", "jira", "notion", "postman",
+      "vscode", "zsh", "slack", "trello", "confluence",
+    ],
+  },
+];
+
+function buildSkillsSection(
+  rawSkills: string,
+  matchingSkills: string[],
+): string {
+  if (!rawSkills.trim() && !matchingSkills.length) return "";
+
+  const lines = rawSkills.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // Detect "Category: skill1, skill2, ..." format
+  const hasCategoryFormat = lines.some((l) => /^[A-Za-z][A-Za-z\s&/]{1,25}:\s*.+/.test(l));
+
+  if (hasCategoryFormat) {
+    const categories: Array<[string, string[]]> = [];
+    for (const line of lines) {
+      const m = line.match(/^([A-Za-z][A-Za-z\s&/]{1,25}):\s*(.+)$/);
+      if (m) {
+        const cat = m[1].trim();
+        const skills = m[2]
+          .split(/[,;|]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (skills.length > 0) categories.push([cat, skills]);
+      }
+    }
+    if (categories.length > 0) {
+      return categories
+        .slice(0, 4)
+        .map(([cat, skills]) =>
+          `${cat}\n${skills.slice(0, 6).map((s) => `- ${s}`).join("\n")}`,
+        )
+        .join("\n\n");
+    }
+  }
+
+  // Flat list — bucket into known categories by keyword match
+  const assigned = new Set<string>();
+  const groups: Array<[string, string[]]> = [];
+
+  for (const { name, keywords } of SKILL_CATEGORY_MAP) {
+    const matched = lines.filter((s) => {
+      const sl = s.toLowerCase();
+      return keywords.some((k) => sl === k || sl.startsWith(k)) && !assigned.has(s);
+    });
+    if (matched.length > 0) {
+      matched.forEach((s) => assigned.add(s));
+      groups.push([name, matched.slice(0, 6)]);
+    }
+  }
+
+  const unassigned = lines.filter((s) => !assigned.has(s));
+  if (unassigned.length > 0) groups.push(["Other", unassigned.slice(0, 6)]);
+
+  if (!groups.length) {
+    const fallback = [...new Set([...matchingSkills.slice(0, 8), ...lines.slice(0, 8)])];
+    return fallback.map((s) => `- ${s}`).join("\n");
+  }
+
+  return groups
+    .slice(0, 4)
+    .map(([cat, catSkills]) => `${cat}\n${catSkills.map((s) => `- ${s}`).join("\n")}`)
+    .join("\n\n");
+}
+
 // ─── Tailored CV V2 ───────────────────────────────────────────────────────────
 
 export function generateTailoredCvV2(args: {
@@ -112,128 +296,74 @@ export function generateTailoredCvV2(args: {
   const { profile, prefs, resume, job, fitAnalysis } = args;
 
   const name = candidateName(profile);
-  const company = companyName(job);
-  const title = jobTitle(job);
   const location = profile.location ?? job.location ?? "";
   const langStr = str(resume?.languages || profile.languages);
   const links = resume?.links?.trim() ?? "";
   const education = resume?.education?.trim() ?? "";
 
-  // ── Headline: single clean title, never a list of target titles ──────────────
+  // ── Headline: first segment only — never a pipe-separated list ────────────
+  const rawHeadline = profile.headline?.trim() ?? "";
   const headline =
-    profile.headline?.trim() ||
+    rawHeadline.split(/[|,\/\\]/).map((s) => s.trim()).filter(Boolean)[0] ||
     fitAnalysis.recommendedAngle ||
-    (prefs?.targetTitles ? (str(prefs.targetTitles).split(",")[0] ?? "").trim() : "") ||
+    str(prefs?.targetTitles).split(",")[0]?.trim() ||
     "Software Developer";
 
-  // ── Skills: prioritise matching, cap at 16 ────────────────────────────────
-  const rawSkillLines = (resume?.skills ?? "")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // ── Summary: role-specific, no filler, no "Applying for..." ──────────────
+  const summary = buildRoleSummary(resume, fitAnalysis);
 
-  const matchLower = new Set(fitAnalysis.matchingSkills.map((s) => s.toLowerCase()));
-  const prioritized: string[] = [];
-  const secondary: string[] = [];
-  for (const line of rawSkillLines) {
-    if (matchLower.has(line.toLowerCase())) {
-      prioritized.push(line);
-    } else {
-      secondary.push(line);
-    }
-  }
-  for (const ms of fitAnalysis.matchingSkills) {
-    if (!prioritized.some((p) => p.toLowerCase() === ms.toLowerCase())) {
-      prioritized.push(ms);
-    }
-  }
-  const selectedSkills = [...prioritized, ...secondary].slice(0, 16);
-  const skillsBlock =
-    selectedSkills.length > 0
-      ? selectedSkills.join(" · ")
-      : fitAnalysis.matchingSkills.slice(0, 12).join(" · ");
+  // ── Skills: clean grouped sections ───────────────────────────────────────
+  const skillsSection = buildSkillsSection(resume?.skills ?? "", fitAnalysis.matchingSkills);
 
-  // ── Summary: master summary (trimmed) + role-specific hook ───────────────
-  const masterSummary = resume?.summary?.trim() ?? "";
-  const seniority =
-    fitAnalysis.seniorityDetected && fitAnalysis.seniorityDetected !== "Mid"
-      ? fitAnalysis.seniorityDetected + " "
-      : "";
-  let summary: string;
-  if (masterSummary) {
-    const sentences = masterSummary.split(/(?<=[.!?])\s+/);
-    const base = sentences.slice(0, 4).join(" ");
-    const hook =
-      fitAnalysis.strengths[0] ??
-      `Applying for the ${title} role at ${company}, with a focus on ${fitAnalysis.jobFocus}.`;
-    summary = `${base}\n\n${hook}`;
-  } else {
-    const techLine =
-      fitAnalysis.matchingSkills.length > 0
-        ? ` Strong skills in ${fitAnalysis.matchingSkills.slice(0, 5).join(", ")}.`
-        : "";
-    summary =
-      `${seniority}${fitAnalysis.jobFocus} developer with hands-on experience building production systems.${techLine}\n\n` +
-      `Applying for the ${title} role at ${company}.`;
-  }
-
-  // ── Projects: most relevant blocks from resume ────────────────────────────
+  // ── Projects: top 2 by keyword + skill overlap ────────────────────────────
   const projectBlocks = pickProjectBlocks(
     resume?.projects ?? "",
-    fitAnalysis.matchingProjects,
-    4,
+    [...fitAnalysis.matchingProjects, ...fitAnalysis.matchingSkills],
+    2,
   );
-  const projectsText =
-    projectBlocks.length > 0
-      ? projectBlocks.join("\n\n")
-      : fitAnalysis.matchingProjects.length > 0
-        ? fitAnalysis.matchingProjects.slice(0, 4).map((p, i) => `${i + 1}. ${p}`).join("\n\n")
-        : "[Add your most relevant projects here.]";
 
-  // ── Experience: concise (first 20 non-empty lines) ────────────────────────
+  // ── Experience: concise, first 20 non-empty lines ─────────────────────────
   const expLines = (resume?.experience ?? "")
     .split("\n")
     .filter((l) => l.trim().length > 0);
-  const conciseExp = expLines.slice(0, 20).join("\n") || "[Add your professional experience.]";
+  const conciseExp = expLines.slice(0, 20).join("\n");
 
-  // ── Fit note ──────────────────────────────────────────────────────────────
-  const fitNote =
-    fitAnalysis.confidenceScore > 0
-      ? `Fit: ${fitAnalysis.confidenceScore}% · ${fitAnalysis.jobFocus}`
-      : `Focus: ${fitAnalysis.jobFocus}`;
+  // ── Assemble — only include sections with real content, no placeholders ───
+  const parts: string[] = [];
 
-  return [
-    name,
-    `${headline}${location ? ` · ${location}` : ""}${langStr ? ` · ${langStr}` : ""}`,
-    ...(links ? [links] : []),
-    "",
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "TARGET ROLE",
-    `${title} @ ${company}`,
-    fitNote,
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "",
-    "SUMMARY",
-    summary,
-    "",
-    "RELEVANT SKILLS",
-    skillsBlock,
-    "",
-    "SELECTED PROJECTS",
-    projectsText,
-    "",
-    "PROFESSIONAL EXPERIENCE",
-    conciseExp,
-    "",
-    "EDUCATION",
-    education || "[Add your education.]",
-    ...(langStr ? ["", "LANGUAGES", langStr] : []),
-    "",
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    "Generated from saved profile, master resume, job posting and fit analysis. Review before sending.",
-  ]
-    .join("\n")
-    .trim();
+  parts.push(name);
+  parts.push([headline, location, langStr].filter(Boolean).join(" · "));
+  if (links) parts.push(links);
+
+  parts.push("");
+  parts.push("SUMMARY");
+  parts.push(summary);
+
+  if (skillsSection) {
+    parts.push("");
+    parts.push("SKILLS");
+    parts.push(skillsSection);
+  }
+
+  if (projectBlocks.length > 0) {
+    parts.push("");
+    parts.push("SELECTED PROJECTS");
+    parts.push(projectBlocks.join("\n\n"));
+  }
+
+  if (conciseExp) {
+    parts.push("");
+    parts.push("EXPERIENCE");
+    parts.push(conciseExp);
+  }
+
+  if (education) {
+    parts.push("");
+    parts.push("EDUCATION");
+    parts.push(education);
+  }
+
+  return parts.join("\n").trim();
 }
 
 function jobTitle(job: Job): string {
