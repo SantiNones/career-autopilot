@@ -100,6 +100,7 @@ export function MaterialsSection({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("TAILORED_CV");
+  const [generatedBy, setGeneratedBy] = useState<"openai" | "template" | null>(null);
 
   const latestByType = new Map<string, Material>();
   for (const mat of initialMaterials) {
@@ -117,8 +118,9 @@ export function MaterialsSection({
     setError(null);
     try {
       const res = await fetch(`/api/jobs/${jobId}/generate-materials`, { method: "POST" });
-      const json = (await res.json()) as { error?: string };
+      const json = (await res.json()) as { error?: string; generatedBy?: "openai" | "template" };
       if (!res.ok) throw new Error(json.error ?? "Failed");
+      if (json.generatedBy) setGeneratedBy(json.generatedBy);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -137,16 +139,34 @@ export function MaterialsSection({
             Drafts are generated from your saved profile and master resume. Review before sending.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleGenerate()}
-          disabled={generating}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {generating ? "Generating…" : hasMaterials ? "Regenerate All" : "Generate All Materials"}
-        </button>
+        <div className="flex items-center gap-3">
+          {generatedBy && (
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                generatedBy === "openai"
+                  ? "bg-purple-100 text-purple-700"
+                  : "bg-zinc-100 text-zinc-500"
+              }`}
+            >
+              {generatedBy === "openai" ? "AI Generated" : "Template Generated"}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleGenerate()}
+            disabled={generating}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {generating ? "Generating…" : hasMaterials ? "Regenerate All" : "Generate All Materials"}
+          </button>
+        </div>
       </div>
 
+      {generatedBy === "openai" && (
+        <div className="border-b border-amber-100 bg-amber-50 px-5 py-2.5 text-xs text-amber-700">
+          AI-generated materials should be reviewed before sending.
+        </div>
+      )}
       {error && (
         <div className="border-b border-rose-100 bg-rose-50 px-5 py-3 text-xs text-rose-700">
           {error}

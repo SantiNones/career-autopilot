@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { generateMaterials } from "@/server/materialGeneration";
+import { generateOpenAiMaterials } from "@/server/openaiMaterials";
 
 export async function POST(
   _req: Request,
@@ -45,7 +46,37 @@ export async function POST(
         }
       : null;
 
-    const generated = generateMaterials(job, profile ?? { fullName: null, headline: null, location: null, languages: [] }, prefs, resume, ev, fitAnalysis);
+    const profileArg = profile ?? { fullName: null, headline: null, location: null, languages: [] };
+    const hasOpenAiKey = !!process.env.OPENAI_API_KEY;
+
+    type GeneratedMaterials = {
+      tailoredCv: string;
+      coverLetter: string;
+      recruiterMessage: string;
+      screeningAnswers: string;
+    };
+
+    let generated: GeneratedMaterials;
+    let generatedBy: "openai" | "template" = "template";
+
+    if (hasOpenAiKey) {
+      try {
+        generated = await generateOpenAiMaterials({
+          profile: profileArg,
+          preferences: prefs,
+          resume,
+          job,
+          evaluation: ev,
+          fitAnalysis,
+        });
+        generatedBy = "openai";
+      } catch (aiErr) {
+        console.error("[generate-materials] OpenAI failed — falling back to template:", aiErr);
+        generated = generateMaterials(job, profileArg, prefs, resume, ev, fitAnalysis);
+      }
+    } else {
+      generated = generateMaterials(job, profileArg, prefs, resume, ev, fitAnalysis);
+    }
 
     const materialTypeMap = {
       TAILORED_CV: generated.tailoredCv,
@@ -76,7 +107,7 @@ export async function POST(
       results.push(mat);
     }
 
-    return NextResponse.json({ ok: true, materials: results });
+    return NextResponse.json({ ok: true, materials: results, generatedBy });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
