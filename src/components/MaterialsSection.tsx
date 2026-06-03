@@ -12,7 +12,7 @@ type Material = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  TAILORED_CV: "Tailored CV",
+  TAILORED_CV: "Tailored CV V2",
   COVER_LETTER: "Cover Letter",
   RECRUITER_MESSAGE: "Recruiter Message",
   SCREENING_ANSWERS: "Screening Answers",

@@ -10,7 +10,7 @@ export async function POST(
   try {
     const { id } = await props.params;
 
-    const [job, profile, resume] = await Promise.all([
+    const [job, profile, resume, rawFitAnalysis] = await Promise.all([
       prisma.jobPosting.findUnique({
         where: { id },
         include: {
@@ -22,6 +22,7 @@ export async function POST(
         orderBy: { createdAt: "asc" },
       }),
       prisma.resumeMaster.findFirst({ orderBy: { createdAt: "asc" } }),
+      prisma.fitAnalysis.findUnique({ where: { jobPostingId: id } }),
     ]);
 
     if (!job) {
@@ -31,7 +32,20 @@ export async function POST(
     const ev = job.evaluations[0] ?? null;
     const prefs = profile?.preferences ?? null;
 
-    const generated = generateMaterials(job, profile ?? { fullName: null, headline: null, location: null, languages: [] }, prefs, resume, ev);
+    const fitAnalysis = rawFitAnalysis
+      ? {
+          recommendedAngle: rawFitAnalysis.recommendedAngle,
+          jobFocus: rawFitAnalysis.jobFocus,
+          matchingSkills: rawFitAnalysis.matchingSkills as string[],
+          matchingProjects: rawFitAnalysis.matchingProjects as string[],
+          strengths: rawFitAnalysis.strengths as string[],
+          gaps: rawFitAnalysis.gaps as string[],
+          confidenceScore: rawFitAnalysis.confidenceScore,
+          seniorityDetected: rawFitAnalysis.seniorityDetected,
+        }
+      : null;
+
+    const generated = generateMaterials(job, profile ?? { fullName: null, headline: null, location: null, languages: [] }, prefs, resume, ev, fitAnalysis);
 
     const materialTypeMap = {
       TAILORED_CV: generated.tailoredCv,

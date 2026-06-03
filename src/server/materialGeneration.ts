@@ -26,6 +26,17 @@ type Evaluation = {
   narrativeSuggestion: string | null;
 };
 
+type FitAnalysisInput = {
+  recommendedAngle: string;
+  jobFocus: string;
+  matchingSkills: string[];
+  matchingProjects: string[];
+  strengths: string[];
+  gaps: string[];
+  confidenceScore: number;
+  seniorityDetected: string;
+};
+
 type Job = {
   title: string | null;
   companyName: string | null;
@@ -47,6 +58,184 @@ function str(v: unknown): string {
   return String(v);
 }
 
+// ─── Helper: pick the most relevant project blocks from master resume ─────────
+
+function pickProjectBlocks(
+  rawProjects: string,
+  hints: string[],
+  maxCount: number,
+): string[] {
+  if (!rawProjects.trim()) return [];
+
+  const blocks = rawProjects
+    .split(/\n{2,}/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  if (!blocks.length) {
+    return rawProjects
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, maxCount * 3);
+  }
+
+  if (!hints.length) return blocks.slice(0, maxCount);
+
+  const hintLower = hints.map((h) => h.toLowerCase().slice(0, 80));
+
+  const scored = blocks.map((block) => {
+    const bl = block.toLowerCase();
+    let score = 0;
+    for (const h of hintLower) {
+      if (bl.includes(h.slice(0, 40))) score += 2;
+      if (h.length > 20 && bl.includes(h.slice(0, 20))) score += 1;
+    }
+    return { block, score };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxCount)
+    .map((x) => x.block);
+}
+
+// ─── Tailored CV V2 ───────────────────────────────────────────────────────────
+
+export function generateTailoredCvV2(args: {
+  profile: Profile;
+  prefs: Prefs | null;
+  resume: Resume | null;
+  job: Job;
+  fitAnalysis: FitAnalysisInput;
+}): string {
+  const { profile, prefs, resume, job, fitAnalysis } = args;
+
+  const name = candidateName(profile);
+  const company = companyName(job);
+  const title = jobTitle(job);
+  const location = profile.location ?? job.location ?? "";
+  const langStr = str(resume?.languages || profile.languages);
+  const links = resume?.links?.trim() ?? "";
+  const education = resume?.education?.trim() ?? "";
+
+  // ── Headline: single clean title, never a list of target titles ──────────────
+  const headline =
+    profile.headline?.trim() ||
+    fitAnalysis.recommendedAngle ||
+    (prefs?.targetTitles ? (str(prefs.targetTitles).split(",")[0] ?? "").trim() : "") ||
+    "Software Developer";
+
+  // ── Skills: prioritise matching, cap at 16 ────────────────────────────────
+  const rawSkillLines = (resume?.skills ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const matchLower = new Set(fitAnalysis.matchingSkills.map((s) => s.toLowerCase()));
+  const prioritized: string[] = [];
+  const secondary: string[] = [];
+  for (const line of rawSkillLines) {
+    if (matchLower.has(line.toLowerCase())) {
+      prioritized.push(line);
+    } else {
+      secondary.push(line);
+    }
+  }
+  for (const ms of fitAnalysis.matchingSkills) {
+    if (!prioritized.some((p) => p.toLowerCase() === ms.toLowerCase())) {
+      prioritized.push(ms);
+    }
+  }
+  const selectedSkills = [...prioritized, ...secondary].slice(0, 16);
+  const skillsBlock =
+    selectedSkills.length > 0
+      ? selectedSkills.join(" · ")
+      : fitAnalysis.matchingSkills.slice(0, 12).join(" · ");
+
+  // ── Summary: master summary (trimmed) + role-specific hook ───────────────
+  const masterSummary = resume?.summary?.trim() ?? "";
+  const seniority =
+    fitAnalysis.seniorityDetected && fitAnalysis.seniorityDetected !== "Mid"
+      ? fitAnalysis.seniorityDetected + " "
+      : "";
+  let summary: string;
+  if (masterSummary) {
+    const sentences = masterSummary.split(/(?<=[.!?])\s+/);
+    const base = sentences.slice(0, 4).join(" ");
+    const hook =
+      fitAnalysis.strengths[0] ??
+      `Applying for the ${title} role at ${company}, with a focus on ${fitAnalysis.jobFocus}.`;
+    summary = `${base}\n\n${hook}`;
+  } else {
+    const techLine =
+      fitAnalysis.matchingSkills.length > 0
+        ? ` Strong skills in ${fitAnalysis.matchingSkills.slice(0, 5).join(", ")}.`
+        : "";
+    summary =
+      `${seniority}${fitAnalysis.jobFocus} developer with hands-on experience building production systems.${techLine}\n\n` +
+      `Applying for the ${title} role at ${company}.`;
+  }
+
+  // ── Projects: most relevant blocks from resume ────────────────────────────
+  const projectBlocks = pickProjectBlocks(
+    resume?.projects ?? "",
+    fitAnalysis.matchingProjects,
+    4,
+  );
+  const projectsText =
+    projectBlocks.length > 0
+      ? projectBlocks.join("\n\n")
+      : fitAnalysis.matchingProjects.length > 0
+        ? fitAnalysis.matchingProjects.slice(0, 4).map((p, i) => `${i + 1}. ${p}`).join("\n\n")
+        : "[Add your most relevant projects here.]";
+
+  // ── Experience: concise (first 20 non-empty lines) ────────────────────────
+  const expLines = (resume?.experience ?? "")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+  const conciseExp = expLines.slice(0, 20).join("\n") || "[Add your professional experience.]";
+
+  // ── Fit note ──────────────────────────────────────────────────────────────
+  const fitNote =
+    fitAnalysis.confidenceScore > 0
+      ? `Fit: ${fitAnalysis.confidenceScore}% · ${fitAnalysis.jobFocus}`
+      : `Focus: ${fitAnalysis.jobFocus}`;
+
+  return [
+    name,
+    `${headline}${location ? ` · ${location}` : ""}${langStr ? ` · ${langStr}` : ""}`,
+    ...(links ? [links] : []),
+    "",
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "TARGET ROLE",
+    `${title} @ ${company}`,
+    fitNote,
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "",
+    "SUMMARY",
+    summary,
+    "",
+    "RELEVANT SKILLS",
+    skillsBlock,
+    "",
+    "SELECTED PROJECTS",
+    projectsText,
+    "",
+    "PROFESSIONAL EXPERIENCE",
+    conciseExp,
+    "",
+    "EDUCATION",
+    education || "[Add your education.]",
+    ...(langStr ? ["", "LANGUAGES", langStr] : []),
+    "",
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "Generated from saved profile, master resume, job posting and fit analysis. Review before sending.",
+  ]
+    .join("\n")
+    .trim();
+}
+
 function jobTitle(job: Job): string {
   return job.title ?? "this position";
 }
@@ -65,6 +254,7 @@ export function generateMaterials(
   prefs: Prefs | null,
   resume: Resume | null,
   evaluation: Evaluation | null,
+  fitAnalysis: FitAnalysisInput | null = null,
 ): GeneratedMaterials {
   const name = candidateName(profile);
   const title = jobTitle(job);
@@ -88,7 +278,9 @@ export function generateMaterials(
 
   // ─── Tailored CV ────────────────────────────────────────────────────────────
 
-  const tailoredCv = `${name}
+  const tailoredCv = fitAnalysis
+    ? generateTailoredCvV2({ profile, prefs, resume, job, fitAnalysis })
+    : `${name}
 ${headline}${location ? ` · ${location}` : ""}${languages ? ` · ${languages}` : ""}
 ${links ? links : ""}
 
