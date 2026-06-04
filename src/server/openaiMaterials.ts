@@ -264,7 +264,10 @@ export async function generateOpenAiMaterials(args: {
   let raw: string;
 
   if (isGpt5) {
-    // Responses API with json_schema strict — guaranteed valid JSON from GPT-5
+    // GPT-5 and o-series models use the Responses API instead of Chat Completions.
+    // They do not accept `temperature` and require `max_output_tokens` (not `max_tokens`).
+    // `json_schema` strict mode guarantees a well-formed JSON object, so robust parsing
+    // below is still applied defensively in case output_text is unexpectedly wrapped.
     const resp = await client.responses.create({
       model,
       instructions: SYSTEM_PROMPT,
@@ -280,10 +283,9 @@ export async function generateOpenAiMaterials(args: {
       max_output_tokens: 8000,
     });
     raw = resp.output_text ?? "{}";
-    console.log(`[openai-materials] model:${model} source:responses-api length:${raw.length} endsWithBrace:${raw.trim().endsWith("}")}`)
-    console.log(`[openai-materials] raw last 300: ${raw.slice(-300)}`);
+    console.log(`[openai-materials] provider:openai model:${model} source:responses-api length:${raw.length} ok:${raw.trim().startsWith("{") && raw.trim().endsWith("}")}`)
   } else {
-    // Chat Completions API for older models
+    // Older models (gpt-4o, gpt-4-turbo, etc.) use Chat Completions with json_object mode.
     const resp = await client.chat.completions.create({
       model,
       response_format: { type: "json_object" },
@@ -295,19 +297,21 @@ export async function generateOpenAiMaterials(args: {
       temperature: 0.35,
     });
     raw = resp.choices[0]?.message?.content ?? "{}";
-    console.log(`[openai-materials] model:${model} source:chat-completions finish:${resp.choices[0]?.finish_reason ?? "?"} length:${raw.length} endsWithBrace:${raw.trim().endsWith("}")}`)
-    console.log(`[openai-materials] raw last 300: ${raw.slice(-300)}`);
+    console.log(`[openai-materials] provider:openai model:${model} source:chat-completions finish:${resp.choices[0]?.finish_reason ?? "?"} length:${raw.length} ok:${raw.trim().startsWith("{") && raw.trim().endsWith("}")}`)
   }
 
   // ── Parse — strip markdown fences and extract JSON if needed ─────────────────
   const cleaned = extractJson(raw);
 
+  // Robust parsing: even with json_schema strict mode, output can occasionally arrive
+  // wrapped in markdown fences (model quirk). extractJson() handles that before we parse.
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(cleaned) as Record<string, unknown>;
   } catch {
+    // Throw without logging raw content — callers may log the error message.
     throw new Error(
-      `OpenAI JSON parse failed — length:${raw.length} startsWithBrace:${raw.trim().startsWith("{")} endsWithBrace:${raw.trim().endsWith("}")} — last 300: ${raw.slice(-300)}`,
+      `OpenAI JSON parse failed — model:${model} length:${raw.length} startsWithBrace:${raw.trim().startsWith("{")} endsWithBrace:${raw.trim().endsWith("}")}`
     );
   }
 

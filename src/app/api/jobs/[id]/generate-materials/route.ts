@@ -57,8 +57,11 @@ export async function POST(
     };
 
     let generated: GeneratedMaterials;
+    // generatedBy stays "template" unless OpenAI succeeds; the badge in the UI reflects this.
     let generatedBy: "openai" | "template" = "template";
 
+    // Deterministic fallback: if OPENAI_API_KEY is absent or the AI call fails, we always
+    // produce usable materials from the template generator so the user is never blocked.
     if (hasOpenAiKey) {
       try {
         generated = await generateOpenAiMaterials({
