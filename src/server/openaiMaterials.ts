@@ -54,6 +54,7 @@ type GeneratedMaterials = {
 };
 
 // ─── Robust JSON extractor (handles markdown fences and surrounding text) ──────
+// Needed because even strict json_schema mode can occasionally return fenced output.
 
 function extractJson(raw: string): string {
   // Strip ```json ... ``` or ``` ... ``` fences
@@ -75,17 +76,332 @@ function str(v: unknown): string {
   return String(v);
 }
 
-const SYSTEM_PROMPT = `You are an expert career writer producing job application materials for a candidate.
+// ─── Narrative Analysis ───────────────────────────────────────────────────────
+// Deterministic pre-processing layer that runs before the GPT call.
+// It distils the job description + candidate data into a positioning strategy
+// so that GPT can generate recruiter-quality materials rather than just matching
+// keywords. This runs entirely in code — no LLM needed for this step.
+
+type CandidateGap = {
+  gap: string;
+  severity: "high" | "medium" | "low";
+  mitigation: string;
+};
+
+type NarrativeAnalysis = {
+  roleCategory: string;
+  primaryHiringSignals: string[];
+  strongestRelevantProjects: string[];
+  strongestRelevantExperience: string[];
+  transferableStrengths: string[];
+  candidateGaps: CandidateGap[];
+  recruiterReassurances: string[];
+  positioningStrategy: string;
+};
+
+// ── Role category detector ────────────────────────────────────────────────────
+
+const ROLE_CATEGORIES: Array<{ category: string; signals: string[]; hiringSignals: string[] }> = [
+  {
+    category: "Frontend Engineer",
+    signals: ["frontend", "front-end", "front end", "react", "vue", "angular", "svelte", "ui developer", "interface"],
+    hiringSignals: ["React / component architecture", "Responsive & accessible UI", "State management", "CSS / design systems", "TypeScript"],
+  },
+  {
+    category: "AI Engineer",
+    signals: ["ai engineer", "llm", "openai", "langchain", "langgraph", "agentic", "rag", "embedding", "workflow orchestration", "ai automation"],
+    hiringSignals: ["LLM system design", "Agentic workflow orchestration", "Structured outputs & reliability", "Prompt engineering", "API integration"],
+  },
+  {
+    category: "Full-Stack Engineer",
+    signals: ["full-stack", "fullstack", "full stack"],
+    hiringSignals: ["End-to-end feature delivery", "Frontend + backend integration", "API design", "Database modeling", "Deployment"],
+  },
+  {
+    category: "Backend Engineer",
+    signals: ["backend", "back-end", "back end", "api engineer", "server-side"],
+    hiringSignals: ["API design & reliability", "Data modeling", "Performance & scalability", "Authentication & security", "Background jobs"],
+  },
+  {
+    category: "Solutions Engineer",
+    signals: ["solutions engineer", "solutions architect", "technical consultant", "pre-sales", "implementation engineer"],
+    hiringSignals: ["Client-facing technical consulting", "Integration & implementation", "Business requirement translation", "Demo & proof-of-concept", "Documentation"],
+  },
+  {
+    category: "Product Support",
+    signals: ["support", "customer support", "technical support", "helpdesk", "service desk", "customer success"],
+    hiringSignals: ["Troubleshooting & root cause analysis", "Customer communication", "Ownership & follow-through", "Technical investigation", "Documentation"],
+  },
+  {
+    category: "Automation Engineer",
+    signals: ["automation", "rpa", "n8n", "zapier", "make.com", "workflow automation", "process automation"],
+    hiringSignals: ["Workflow design & automation", "API & webhook integration", "No-code / low-code tooling", "Process improvement", "Reliability"],
+  },
+  {
+    category: "DevOps / Platform Engineer",
+    signals: ["devops", "sre", "platform engineer", "infrastructure engineer", "cloud engineer"],
+    hiringSignals: ["CI/CD pipelines", "Infrastructure as code", "Monitoring & reliability", "Container orchestration", "Cloud platforms"],
+  },
+  {
+    category: "Data Engineer",
+    signals: ["data engineer", "data pipeline", "analytics engineer", "machine learning", "ml engineer"],
+    hiringSignals: ["Data pipeline design", "ETL / ELT", "SQL & data modeling", "ML workflow integration", "Analytics"],
+  },
+];
+
+function detectRoleCategory(jobTitle: string | null, jobText: string | null): {
+  category: string;
+  primaryHiringSignals: string[];
+} {
+  const needle = `${jobTitle ?? ""} ${jobText?.slice(0, 1500) ?? ""}`.toLowerCase();
+  for (const { category, signals, hiringSignals } of ROLE_CATEGORIES) {
+    if (signals.some((s) => needle.includes(s))) {
+      return { category, primaryHiringSignals: hiringSignals };
+    }
+  }
+  return {
+    category: "Software Developer",
+    primaryHiringSignals: ["Technical problem solving", "Clean code & maintainability", "Collaboration", "Delivery & ownership"],
+  };
+}
+
+// ── Asset ranker — scores projects and experience blocks against hiring signals ─
+
+function rankAssets(
+  rawText: string | null,
+  signals: string[],
+  maxCount: number,
+): string[] {
+  if (!rawText?.trim()) return [];
+  const blocks = rawText.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  if (!blocks.length) return rawText.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, maxCount);
+
+  const signalTokens = signals.flatMap((s) => s.toLowerCase().split(/[\s,/&]+/)).filter((t) => t.length > 2);
+
+  const scored = blocks.map((block) => {
+    const bl = block.toLowerCase();
+    let score = 0;
+    for (const token of signalTokens) {
+      if (bl.includes(token)) score += 1;
+    }
+    // Boost projects/roles that appear earlier in the list (recency bias)
+    return { block, score };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxCount)
+    .map((x) => {
+      // Return just the first line (name/title) as a short label
+      return x.block.split("\n")[0].replace(/^[#*•·\-]\s*/, "").trim();
+    });
+}
+
+// ── Gap detector — compares fitAnalysis gaps with resume assets ───────────────
+
+function detectGaps(
+  fitAnalysisGaps: string[],
+  resume: Resume | null,
+  primarySignals: string[],
+): CandidateGap[] {
+  const resumeText = [
+    resume?.skills ?? "",
+    resume?.experience ?? "",
+    resume?.projects ?? "",
+  ].join(" ").toLowerCase();
+
+  const signalTokens = primarySignals.flatMap((s) =>
+    s.toLowerCase().split(/[\s,/&]+/).filter((t) => t.length > 3)
+  );
+
+  return fitAnalysisGaps.slice(0, 5).map((gap) => {
+    const gapLower = gap.toLowerCase();
+    // Severity: high if gap matches a primary hiring signal
+    const isHighSeverity = signalTokens.some((t) => gapLower.includes(t));
+    // Mitigation: find adjacent skills/tools already in resume that partially cover the gap
+    const mitigation = buildMitigation(gap, resumeText);
+    return {
+      gap,
+      severity: isHighSeverity ? "high" : ("medium" as const),
+      mitigation,
+    };
+  });
+}
+
+function buildMitigation(gap: string, resumeText: string): string {
+  const gapLower = gap.toLowerCase();
+
+  // Common gap → mitigation patterns
+  const MITIGATIONS: Array<{ patterns: string[]; response: string }> = [
+    {
+      patterns: ["langgraph", "langchain"],
+      response: "Has built multi-step OpenAI-powered workflows, structured output pipelines, conversation memory, and agentic systems.",
+    },
+    {
+      patterns: ["langsmith", "observability", "tracing"],
+      response: "Has implemented logging, error handling, and output validation in production AI systems.",
+    },
+    {
+      patterns: ["mobile", "ios", "android", "react native", "flutter"],
+      response: "Has shipped responsive web interfaces; familiar with cross-platform concerns.",
+    },
+    {
+      patterns: ["kubernetes", "k8s"],
+      response: "Has experience with Docker, container deployment, and CI/CD pipelines.",
+    },
+    {
+      patterns: ["aws", "gcp", "azure", "cloud"],
+      response: "Has deployed production systems to cloud platforms and managed environment configuration.",
+    },
+  ];
+
+  for (const { patterns, response } of MITIGATIONS) {
+    if (patterns.some((p) => gapLower.includes(p))) return response;
+  }
+
+  // Generic: look for skills in resume that partially overlap with gap keywords
+  const gapTokens = gapLower.split(/[\s,/\-]+/).filter((t) => t.length > 3);
+  const adjacent = gapTokens.filter((t) => resumeText.includes(t));
+  if (adjacent.length > 0) {
+    return `Has adjacent experience with: ${adjacent.slice(0, 3).join(", ")}.`;
+  }
+
+  return "Not directly addressed in resume — honest gap.";
+}
+
+// ── Recruiter reassurances ────────────────────────────────────────────────────
+
+function buildReassurances(gaps: CandidateGap[]): string[] {
+  return gaps
+    .filter((g) => g.mitigation !== "Not directly addressed in resume — honest gap.")
+    .map((g) => `Re: "${g.gap}" — ${g.mitigation}`);
+}
+
+// ── Positioning strategy ──────────────────────────────────────────────────────
+
+const POSITIONING_TEMPLATES: Array<{ category: string; template: string }> = [
+  {
+    category: "Frontend Engineer",
+    template: "Position as a frontend-focused developer with shipped React projects and responsive UI experience.",
+  },
+  {
+    category: "AI Engineer",
+    template: "Position as an emerging AI engineer already building production OpenAI-powered systems and workflow orchestration products.",
+  },
+  {
+    category: "Full-Stack Engineer",
+    template: "Position as a versatile full-stack developer who ships end-to-end features with ownership of both UI and backend.",
+  },
+  {
+    category: "Backend Engineer",
+    template: "Position as a backend-focused developer with API design, data modeling, and production deployment experience.",
+  },
+  {
+    category: "Solutions Engineer",
+    template: "Position as a technically capable professional who bridges engineering and client-facing work with strong communication and implementation skills.",
+  },
+  {
+    category: "Product Support",
+    template: "Position as a technically capable operator with strong troubleshooting skills, communication ability, and quality-focused experience.",
+  },
+  {
+    category: "Automation Engineer",
+    template: "Position as an automation specialist who designs reliable, API-driven workflows that eliminate manual processes.",
+  },
+  {
+    category: "DevOps / Platform Engineer",
+    template: "Position as a platform-focused engineer with CI/CD, containerisation, and infrastructure reliability experience.",
+  },
+  {
+    category: "Data Engineer",
+    template: "Position as a data-focused developer with pipeline design, SQL, and analytical tooling experience.",
+  },
+];
+
+function buildPositioningStrategy(
+  category: string,
+  strongestProjects: string[],
+  transferableStrengths: string[],
+): string {
+  const template = POSITIONING_TEMPLATES.find((t) => t.category === category)?.template
+    ?? "Position as a pragmatic developer with end-to-end delivery experience and strong ownership instincts.";
+
+  const extras: string[] = [];
+  if (strongestProjects.length > 0) {
+    extras.push(`Lead with: ${strongestProjects.slice(0, 2).join(", ")}.`);
+  }
+  if (transferableStrengths.length > 0) {
+    extras.push(`Emphasise: ${transferableStrengths.slice(0, 2).join("; ")}.`);
+  }
+  return extras.length > 0 ? `${template} ${extras.join(" ")}` : template;
+}
+
+// ── Main entry point ──────────────────────────────────────────────────────────
+
+export function buildNarrativeAnalysis(
+  job: Job,
+  resume: Resume | null,
+  fitAnalysis: FitAnalysisInput | null,
+): NarrativeAnalysis {
+  const { category, primaryHiringSignals } = detectRoleCategory(job.title, job.rawText);
+
+  // Rank projects and experience by relevance to hiring signals
+  const allSignals = [
+    ...primaryHiringSignals,
+    ...(fitAnalysis?.matchingSkills ?? []),
+    ...(fitAnalysis?.matchingProjects ?? []),
+  ];
+
+  const strongestRelevantProjects = rankAssets(resume?.projects ?? null, allSignals, 3);
+  const strongestRelevantExperience = rankAssets(resume?.experience ?? null, allSignals, 2);
+
+  // Transferable strengths: use fitAnalysis strengths filtered to be substantive
+  const transferableStrengths = (fitAnalysis?.strengths ?? [])
+    .filter((s) => s.length > 20 && !s.toLowerCase().startsWith("note:") && !s.toLowerCase().startsWith("clarify"))
+    .slice(0, 4);
+
+  // Detect gaps and build reassurances
+  const candidateGaps = detectGaps(fitAnalysis?.gaps ?? [], resume, primaryHiringSignals);
+  const recruiterReassurances = buildReassurances(candidateGaps);
+
+  const positioningStrategy = buildPositioningStrategy(
+    category,
+    strongestRelevantProjects,
+    transferableStrengths,
+  );
+
+  return {
+    roleCategory: category,
+    primaryHiringSignals,
+    strongestRelevantProjects,
+    strongestRelevantExperience,
+    transferableStrengths,
+    candidateGaps,
+    recruiterReassurances,
+    positioningStrategy,
+  };
+}
+
+// ─── System prompt ────────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `You are a senior career coach and recruiter producing job application materials.
+
+CORE PHILOSOPHY:
+You do NOT match keywords. You build positioning.
+Every material should feel like it was written by a skilled recruiter who understands both the candidate and the role deeply.
 
 STRICT RULES — follow all of them:
 - Use ONLY the candidate data provided. Never invent experience, employers, skills, projects, or dates.
-- Tailor every material specifically to the target role and company.
-- Prioritize relevance. Omit sections with no relevant data.
-- Avoid keyword stuffing, giant bullet lists, and filler phrases ("focused on", "ability to", "passionate about", "team player").
+- Follow the POSITIONING STRATEGY provided in the NARRATIVE ANALYSIS section.
+- Prioritise the STRONGEST RELEVANT PROJECTS and STRONGEST RELEVANT EXPERIENCE identified in the analysis.
+- Do not list every skill or every project. Omit what is not relevant.
+- Address CANDIDATE GAPS honestly using the RECRUITER REASSURANCES where applicable. Do not hide or ignore them.
+- Avoid keyword stuffing, giant bullet lists, and filler phrases ("focused on", "ability to", "passionate about", "team player", "results-driven", "hard-working").
 - Avoid placeholders except [Add availability] and [Add salary expectation] for those two screening questions.
 - Avoid internal notes, meta-commentary, and section headings that don't match the formats below.
-- Tone: professional, human, and concise.
+- Tone: professional, human, and concise. Write like a person, not a template.
 - Do not repeat identical sentences across materials.
+- Build a coherent professional narrative across all four materials.
 
 OUTPUT: Return ONLY a single valid JSON object with exactly these four string keys:
 tailoredCv, coverLetter, recruiterMessage, screeningAnswers.
@@ -97,21 +413,24 @@ tailoredCv format (STRICT max 400 words, plain text):
   [Links if any]
 
   SUMMARY
-  2 sentences maximum, role-specific.
+  2 sentences. Use the positioning strategy. Be specific about what value the candidate brings to this role.
 
   SKILLS
   Up to 3 role-relevant categories, max 5 items each.
+  Prioritise categories most relevant to the PRIMARY HIRING SIGNALS.
   Format: CategoryName\n- item\n- item
 
   SELECTED PROJECTS
-  Top 2 projects only.
-  Format: Project Name\n• bullet\n• bullet (max 2 bullets per project)
+  Show only the STRONGEST RELEVANT PROJECTS (max 2).
+  Do not list projects that are irrelevant to this role.
+  Format: Project Name\n• bullet\n• bullet (max 2 bullets per project — achievements, not descriptions)
 
   EXPERIENCE
-  Max 2 roles. Format:
+  Show only the STRONGEST RELEVANT EXPERIENCE (max 2 roles).
+  Format:
   Role Title
   Company | Dates
-  • achievement (1 bullet only)
+  • achievement (1 bullet only — specific, quantified where possible)
 
   EDUCATION
   Degree, Institution, Year (one line)
@@ -120,7 +439,9 @@ tailoredCv format (STRICT max 400 words, plain text):
 coverLetter format (STRICT max 200 words, plain text):
   Dear [Company] Hiring Team,
 
-  [2–3 short paragraphs: hook, why candidate fits, closing CTA]
+  Paragraph 1: Specific hook — why this candidate for this role. Use the positioning strategy.
+  Paragraph 2: Strongest evidence. Reference the most relevant project or experience. Address a key gap with a reassurance if applicable.
+  Paragraph 3: Short closing CTA.
 
   Best regards,
   [Name]
@@ -129,9 +450,9 @@ coverLetter format (STRICT max 200 words, plain text):
 recruiterMessage format (STRICT max 80 words, plain text):
   Hi,
 
-  [1–2 sentences: who candidate is + best matching angle]
+  1–2 sentences: who the candidate is + the single strongest reason to talk (from positioning strategy).
   [Links if available]
-  [Clear CTA]
+  [Clear CTA — one sentence]
 
   Best,
   [Name]
@@ -139,16 +460,16 @@ recruiterMessage format (STRICT max 80 words, plain text):
 ────────────────────────────────────────
 screeningAnswers format (plain text, Q&A):
   Q: Tell me about yourself.
-  A: [2–3 sentences, specific to candidate and role]
+  A: [2–3 sentences grounded in the positioning strategy and strongest assets]
 
   Q: Why are you interested in this role?
-  A: [Specific, not generic]
+  A: [Specific to the PRIMARY HIRING SIGNALS — not generic]
 
   Q: What are your key strengths?
-  A: [3 concrete strengths grounded in candidate data]
+  A: [3 concrete strengths from TRANSFERABLE STRENGTHS — one sentence each]
 
   Q: Describe a relevant project or achievement.
-  A: [One specific project from provided data]
+  A: [One of the STRONGEST RELEVANT PROJECTS — specific outcome, not vague description]
 
   Q: What is your availability / notice period?
   A: [Add availability]
@@ -157,7 +478,7 @@ screeningAnswers format (plain text, Q&A):
   A: [Add salary expectation]
 
   Q: Any questions for us?
-  A: [2–3 thoughtful questions about the role, team, or company]`;
+  A: [2–3 thoughtful questions about the role, team, or company — informed by the PRIMARY HIRING SIGNALS]`;
 
 export async function generateOpenAiMaterials(args: {
   profile: Profile;
@@ -230,6 +551,48 @@ export async function generateOpenAiMaterials(args: {
     ? `Fit score: ${evaluation.totalScore}/100 (${evaluation.label})${evaluation.narrativeSuggestion ? `\nNote: ${evaluation.narrativeSuggestion}` : ""}`
     : "";
 
+  // ── Narrative analysis block ──────────────────────────────────────────────────
+  // buildNarrativeAnalysis() runs deterministically before the GPT call.
+  // It produces a positioning strategy, ranked assets, and gap mitigations
+  // that GPT uses to generate recruiter-quality materials rather than
+  // generic keyword matches.
+  const narrative = buildNarrativeAnalysis(job, resume, fitAnalysis);
+
+  const gapLines = narrative.candidateGaps.map((g) =>
+    `- ${g.gap} [severity: ${g.severity}]${g.mitigation !== "Not directly addressed in resume — honest gap." ? ` → ${g.mitigation}` : " → Honest gap; do not fabricate mitigation"}`,
+  );
+
+  const narrativeLines = [
+    `Role category: ${narrative.roleCategory}`,
+    `Positioning strategy: ${narrative.positioningStrategy}`,
+    "",
+    `Primary hiring signals:`,
+    ...narrative.primaryHiringSignals.map((s) => `- ${s}`),
+    "",
+    `Strongest relevant projects (prioritise these in CV and screening answers):`,
+    ...(narrative.strongestRelevantProjects.length
+      ? narrative.strongestRelevantProjects.map((p) => `- ${p}`)
+      : ["- (none identified — use whatever is available)"]),
+    "",
+    `Strongest relevant experience (prioritise these in CV):`,
+    ...(narrative.strongestRelevantExperience.length
+      ? narrative.strongestRelevantExperience.map((e) => `- ${e}`)
+      : ["- (none identified — use whatever is available)"]),
+    "",
+    `Transferable strengths:`,
+    ...(narrative.transferableStrengths.length
+      ? narrative.transferableStrengths.map((s) => `- ${s}`)
+      : ["- (none identified)"]),
+    ...(gapLines.length
+      ? ["", "Candidate gaps (address honestly — use reassurance where provided):", ...gapLines]
+      : []),
+    ...(narrative.recruiterReassurances.length
+      ? ["", "Recruiter reassurances:", ...narrative.recruiterReassurances.map((r) => `- ${r}`)]
+      : []),
+  ];
+
+  const narrativeBlock = narrativeLines.join("\n");
+
   // ── Assemble user message ────────────────────────────────────────────────────
   const userContent = [
     "## CANDIDATE PROFILE",
@@ -242,6 +605,10 @@ export async function generateOpenAiMaterials(args: {
     jobBlock,
     ...(fitBlock ? ["", "## FIT ANALYSIS", fitBlock] : []),
     ...(evalBlock ? ["", "## EVALUATION", evalBlock] : []),
+    "",
+    "## NARRATIVE ANALYSIS",
+    "Use this section to drive all materials. Do not ignore it.",
+    narrativeBlock,
   ]
     .join("\n")
     .trim();
