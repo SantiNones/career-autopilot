@@ -10,13 +10,40 @@ const LINE_HEIGHT  = 15;
 const SECTION_GAP  = 8;   // extra space before a section heading
 const HEADING_SIZE = 11;
 
+// ── Unicode → WinAnsi normalizer ─────────────────────────────────────────────
+// Helvetica (WinAnsi / cp1252) cannot encode characters outside U+00FF.
+// This helper replaces the most common offenders produced by GPT and then
+// strips any remaining characters above U+00FF with a safe ASCII fallback.
+export function normalizePdfText(text: string): string {
+  return text
+    // Dashes
+    .replace(/\u2011/g, "-")   // non-breaking hyphen
+    .replace(/\u2013/g, "-")   // en dash
+    .replace(/\u2014/g, "-")   // em dash
+    .replace(/\u2015/g, "-")   // horizontal bar
+    // Quotes
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')  // left/right double quotes
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")  // left/right single quotes / apostrophes
+    // Bullets and markers (normalize to ASCII '-' so isBullet() still matches)
+    .replace(/[\u2022\u2023\u2024\u2025\u2026\u25AA\u25CF\u25E6\u00B7\u00B7\u2027]/g, "-")
+    // Ellipsis
+    .replace(/\u2026/g, "...")
+    // Non-breaking space
+    .replace(/\u00A0/g, " ")
+    // Thin / hair / zero-width spaces
+    .replace(/[\u200B\u200C\u200D\u2060\u202F\u205F\uFEFF]/g, "")
+    // Any remaining character above U+00FF → stripped (safe fallback)
+    .replace(/[^\x00-\xFF]/g, "");
+}
+
 function isHeading(line: string): boolean {
   // Treat ALL-CAPS lines (like "SUMMARY", "SKILLS", "EXPERIENCE") as headings
   return /^[A-Z][A-Z\s&/]{2,}$/.test(line.trim());
 }
 
 function isBullet(line: string): boolean {
-  return /^[•·\-\*]\s/.test(line.trim());
+  // After normalization, bullets are ASCII '-', '*', or the original '·'
+  return /^[-*·]\s/.test(line.trim());
 }
 
 export async function generatePdfFromText(content: string): Promise<Buffer> {
@@ -52,7 +79,8 @@ export async function generatePdfFromText(content: string): Promise<Buffer> {
 
   const rawLines = content.split("\n");
   for (const raw of rawLines) {
-    const trimmed = raw.trim();
+    // Normalize before any classification or measurement to avoid WinAnsi errors
+    const trimmed = normalizePdfText(raw).trim();
 
     if (!trimmed) {
       // Blank line → small vertical gap (encoded as empty spacer)
@@ -66,7 +94,7 @@ export async function generatePdfFromText(content: string): Promise<Buffer> {
     }
 
     if (isBullet(trimmed)) {
-      const bulletText = trimmed.replace(/^[•·\-\*]\s*/, "• ");
+      const bulletText = trimmed.replace(/^[-*·]\s*/, "- ");
       renderLines.push({ text: bulletText, bold: false, size: FONT_SIZE, indent: 12, spaceBefore: 0 });
       continue;
     }
