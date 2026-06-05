@@ -20,6 +20,76 @@ const TYPE_LABELS: Record<string, string> = {
 
 const TYPE_ORDER = ["TAILORED_CV", "COVER_LETTER", "RECRUITER_MESSAGE", "SCREENING_ANSWERS"];
 
+// ── Filename builder ────────────────────────────────────────────────────────
+function buildFilename(
+  type: "cv" | "cover-letter",
+  format: "pdf" | "docx",
+  candidateName?: string,
+  companyName?: string,
+): string {
+  const namePart  = candidateName?.trim().replace(/\s+/g, "_") ?? "";
+  const coName    = companyName?.trim().replace(/\s+/g, "_") ?? "";
+  const label     = type === "cv" ? "CV" : "Cover_Letter";
+  const parts     = [namePart, label, coName].filter(Boolean);
+  return `${parts.join("_")}.${format}`;
+}
+
+// ── Export button ─────────────────────────────────────────────────────────────
+function ExportButton({
+  label,
+  apiPath,
+  content,
+  filename,
+}: {
+  label: string;
+  apiPath: string;
+  content: string;
+  filename: string;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  async function handleExport() {
+    setLoading(true);
+    setExportError(null);
+    try {
+      const res = await fetch(apiPath, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content, filename }),
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Unable to generate export. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <button
+        type="button"
+        onClick={() => void handleExport()}
+        disabled={loading}
+        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50"
+      >
+        {loading ? "Exporting…" : label}
+      </button>
+      {exportError && <span className="text-xs text-rose-500">{exportError}</span>}
+    </div>
+  );
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   function handleCopy() {
@@ -39,7 +109,17 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function MaterialCard({ mat, jobId }: { mat: Material; jobId: string }) {
+function MaterialCard({
+  mat,
+  jobId,
+  candidateName,
+  companyName,
+}: {
+  mat: Material;
+  jobId: string;
+  candidateName?: string;
+  companyName?: string;
+}) {
   const router = useRouter();
   const [marking, setMarking] = useState(false);
 
@@ -67,6 +147,38 @@ function MaterialCard({ mat, jobId }: { mat: Material; jobId: string }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {mat.content && mat.type === "TAILORED_CV" && (
+            <>
+              <ExportButton
+                label="PDF"
+                apiPath="/api/export/cv/pdf"
+                content={mat.content}
+                filename={buildFilename("cv", "pdf", candidateName, companyName)}
+              />
+              <ExportButton
+                label="DOCX"
+                apiPath="/api/export/cv/docx"
+                content={mat.content}
+                filename={buildFilename("cv", "docx", candidateName, companyName)}
+              />
+            </>
+          )}
+          {mat.content && mat.type === "COVER_LETTER" && (
+            <>
+              <ExportButton
+                label="PDF"
+                apiPath="/api/export/cover-letter/pdf"
+                content={mat.content}
+                filename={buildFilename("cover-letter", "pdf", candidateName, companyName)}
+              />
+              <ExportButton
+                label="DOCX"
+                apiPath="/api/export/cover-letter/docx"
+                content={mat.content}
+                filename={buildFilename("cover-letter", "docx", candidateName, companyName)}
+              />
+            </>
+          )}
           {mat.content && <CopyButton text={mat.content} />}
           {mat.status !== "REVIEWED" && (
             <button
@@ -106,9 +218,13 @@ const SELECTION_LABELS: Array<{ key: keyof Selection; label: string }> = [
 export function MaterialsSection({
   jobId,
   initialMaterials,
+  candidateName,
+  companyName,
 }: {
   jobId: string;
   initialMaterials: Material[];
+  candidateName?: string;
+  companyName?: string;
 }) {
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
@@ -284,7 +400,7 @@ export function MaterialsSection({
           {/* Active card */}
           <div className="p-5">
             {activeMat ? (
-              <MaterialCard mat={activeMat} jobId={jobId} />
+              <MaterialCard mat={activeMat} jobId={jobId} candidateName={candidateName} companyName={companyName} />
             ) : (
               <p className="py-8 text-center text-sm text-zinc-400">
                 No material for this type yet. Click &ldquo;Regenerate All&rdquo;.

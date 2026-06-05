@@ -15,8 +15,10 @@
   },
   "dependencies": {
     "@prisma/client": "^6.16.1",
+    "docx": "^9.7.1",
     "next": "16.2.2",
     "openai": "^6.41.0",
+    "pdf-lib": "^1.17.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

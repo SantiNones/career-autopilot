@@ -80,14 +80,17 @@ export default async function JobDetailPage(props: {
 }) {
   const { id } = await props.params;
 
-  const job = await prisma.jobPosting.findUnique({
-    where: { id },
-    include: {
-      evaluations: { orderBy: { createdAt: "desc" }, take: 1 },
-      materials: { orderBy: { createdAt: "desc" } },
-      fitAnalysis: true,
-    },
-  });
+  const [job, profile] = await Promise.all([
+    prisma.jobPosting.findUnique({
+      where: { id },
+      include: {
+        evaluations: { orderBy: { createdAt: "desc" }, take: 1 },
+        materials: { orderBy: { createdAt: "desc" } },
+        fitAnalysis: true,
+      },
+    }),
+    prisma.userProfile.findFirst({ select: { fullName: true } }),
+  ]);
 
   if (!job) {
     return (
@@ -393,7 +396,12 @@ export default async function JobDetailPage(props: {
         </div>
 
         {/* Materials */}
-        <MaterialsSection jobId={job.id} initialMaterials={job.materials} />
+        <MaterialsSection
+          jobId={job.id}
+          initialMaterials={job.materials}
+          candidateName={profile?.fullName ?? undefined}
+          companyName={job.companyName ?? undefined}
+        />
 
         {/* Raw text debug */}
         <details className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
