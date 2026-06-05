@@ -93,7 +93,7 @@ type CompanyContext = {
   label: string;    // human-readable summary for GPT prompt
 };
 
-type RankedProject = { name: string; reason: string };
+type RankedProject = { name: string; reason: string; liveDemo?: string; github?: string };
 
 type NarrativeAnalysis = {
   targetTitle: string;              // Exact job title the CV headline must use
@@ -101,6 +101,8 @@ type NarrativeAnalysis = {
   roleCategory: string;             // Legacy alias of roleEmphasis (kept for positioning strategy)
   primaryHiringSignals: string[];
   companyContext: CompanyContext;    // Detected industry/company type context
+  skillsSectionLabel: string;       // "TECHNICAL SKILLS" or "SKILLS"
+  cvLayout: CvLayout;               // "engineering" | "support"
   recommendedSkillCategories: string[];  // Context-aware ordered skill categories for GPT
   coreSkillCategories: string[];    // Alias kept for backward compat
   rankedProjectsWithReasons: RankedProject[];  // Multi-dimensional scored projects with GPT reasons
@@ -202,6 +204,8 @@ type ProjectMeta = {
   domainTags: string[];      // Industry / domain signals
   maturityScore: number;     // 0–10: deployed, production, complexity
   maturitySignals: string;   // One-line justification (used in GPT reasons)
+  liveDemo?: string;         // Live demo URL (only include if real and deployed)
+  github?: string;           // GitHub repository URL
 };
 
 const PROJECT_METADATA: ProjectMeta[] = [
@@ -211,6 +215,7 @@ const PROJECT_METADATA: ProjectMeta[] = [
     domainTags: ["saas", "job_search", "workflow", "product"],
     maturityScore: 8,
     maturitySignals: "Deployed full-stack SaaS with OpenAI integration, Postgres, real production workflow.",
+    github: "https://github.com/SantiNones/career-autopilot",
   },
   {
     namePatterns: ["projectflow", "project flow"],
@@ -218,6 +223,8 @@ const PROJECT_METADATA: ProjectMeta[] = [
     domainTags: ["product", "saas", "consulting", "delivery", "workflow"],
     maturityScore: 8,
     maturitySignals: "Deployed MVP with complete product UI, AI-driven workflow, and consulting/delivery use case.",
+    liveDemo: "https://projectflow-ai-chi.vercel.app/",
+    github: "https://github.com/SantiNones/projectflow-ai",
   },
   {
     namePatterns: ["rise", "rise app"],
@@ -225,6 +232,8 @@ const PROJECT_METADATA: ProjectMeta[] = [
     domainTags: ["gamification", "psychology", "product", "education"],
     maturityScore: 7,
     maturitySignals: "Complete full-stack bootcamp product with complex state management and product thinking.",
+    liveDemo: "https://rise-app.onrender.com/",
+    github: "https://github.com/SantiNones/rise-habit-tracker",
   },
   {
     namePatterns: ["ethnicraft"],
@@ -232,6 +241,8 @@ const PROJECT_METADATA: ProjectMeta[] = [
     domainTags: ["ecommerce", "branding", "product_presentation", "commercial_ui", "responsive"],
     maturityScore: 6,
     maturitySignals: "Deployed commercial UI with Figma-to-React implementation and ecommerce product presentation.",
+    liveDemo: "https://ethnicraft-hek8qyip6-santiago-nones-projects.vercel.app/",
+    github: "https://github.com/SantiNones/ethnicraft",
   },
   {
     namePatterns: ["whatsapp agent", "whatsapp-agent", "whatsapp bot"],
@@ -246,6 +257,7 @@ const PROJECT_METADATA: ProjectMeta[] = [
     domainTags: ["reservations", "marketplace", "booking"],
     maturityScore: 3,
     maturitySignals: "Architecture / MVP concept — no deployed product, limited production evidence.",
+    github: "https://github.com/SantiNones/station-app",
   },
 ];
 
@@ -256,6 +268,8 @@ type ProjectDimensionScore = {
   maturity: number;            // 0–1 (normalised from 0–10)
   finalScore: number;
   reason: string;
+  liveDemo?: string;
+  github?: string;
 };
 
 function getProjectMeta(firstLine: string): ProjectMeta | null {
@@ -365,7 +379,7 @@ function scoreProjectDimensions(
   reasonParts.push(meta.maturitySignals);
   const reason = reasonParts.join("; ");
 
-  return { name: firstLine, technicalRelevance, domainRelevance, maturity, finalScore, reason };
+  return { name: firstLine, technicalRelevance, domainRelevance, maturity, finalScore, reason, liveDemo: meta.liveDemo, github: meta.github };
 }
 
 // ── Context-aware project ranker ──────────────────────────────────────────────
@@ -399,7 +413,7 @@ function rankProjectsContextually(
   return scored
     .sort((a, b) => b.finalScore - a.finalScore)
     .slice(0, maxCount)
-    .map(({ name, reason }) => ({ name, reason }));
+    .map(({ name, reason, liveDemo, github }) => ({ name, reason, liveDemo, github }));
 }
 
 // ── Context-aware skill category ranker ──────────────────────────────────────
@@ -468,6 +482,41 @@ function rankSkillCategories(
     "Product Support":            ["Technical Troubleshooting", "Support Tools", "Communication"],
   };
   return EMPHASIS_MIX[roleEmphasis] ?? ["Frontend", "Backend & APIs", "Tools & Workflow"];
+}
+
+// ── Skills section label ─────────────────────────────────────────────────────
+// Engineering/technical roles → "TECHNICAL SKILLS"; all others → "SKILLS"
+
+const TECHNICAL_ROLE_PATTERNS = [
+  "software engineer", "software developer", "frontend engineer", "front-end engineer",
+  "backend engineer", "back-end engineer", "full-stack engineer", "fullstack engineer",
+  "full stack engineer", "web developer", "application developer", "junior developer",
+  "ai engineer", "data engineer", "devops", "automation engineer", "ml engineer",
+  "platform engineer", "site reliability",
+];
+
+export function getSkillsSectionLabel(targetTitle: string): "TECHNICAL SKILLS" | "SKILLS" {
+  const t = targetTitle.toLowerCase();
+  if (TECHNICAL_ROLE_PATTERNS.some((p) => t.includes(p))) return "TECHNICAL SKILLS";
+  return "SKILLS";
+}
+
+// ── CV layout profile ─────────────────────────────────────────────────────────
+// Engineering layout: Summary → Skills → Projects → Experience → Education
+// Support layout:     Summary → Projects → Experience → Skills → Education
+
+const SUPPORT_LAYOUT_PATTERNS = [
+  "product support", "technical support", "support specialist", "customer support",
+  "customer success", "implementation specialist", "solutions consultant",
+  "operations", "support engineer",
+];
+
+export type CvLayout = "engineering" | "support";
+
+export function getCvLayout(targetTitle: string): CvLayout {
+  const t = targetTitle.toLowerCase();
+  if (SUPPORT_LAYOUT_PATTERNS.some((p) => t.includes(p))) return "support";
+  return "engineering";
 }
 
 // ── Role category detector ────────────────────────────────────────────────────
@@ -724,6 +773,10 @@ export function buildNarrativeAnalysis(
   // Company context: startup/ecommerce/ai/etc tags used for project + skill scoring
   const companyContext = detectCompanyContext(job);
 
+  // Skills section label and CV layout profile (Sprint #7.7)
+  const skillsSectionLabel = getSkillsSectionLabel(targetTitle);
+  const cvLayout = getCvLayout(targetTitle);
+
   // Context-aware skill categories (replaces Sprint #5 buildCoreSkillMix)
   const recommendedSkillCategories = rankSkillCategories(targetTitle, roleEmphasis, companyContext.tags);
   // Keep coreSkillCategories as an alias for backward compatibility
@@ -772,6 +825,8 @@ export function buildNarrativeAnalysis(
     roleCategory: category,
     primaryHiringSignals,
     companyContext,
+    skillsSectionLabel,
+    cvLayout,
     recommendedSkillCategories,
     coreSkillCategories,
     rankedProjectsWithReasons,
@@ -813,10 +868,16 @@ TARGET TITLE RULE (CRITICAL — never violate):
 - WRONG example: Target Title "Junior Software Engineer", Role Emphasis "Frontend" → headline "Junior Frontend Developer"
 
 SKILLS SECTION RULE:
-- Use the RECOMMENDED SKILL CATEGORIES from the NARRATIVE ANALYSIS as the 3 skill section headers in the CV.
+- Use the SKILLS SECTION LABEL from the NARRATIVE ANALYSIS as the section heading (either "TECHNICAL SKILLS" or "SKILLS").
+- Use the RECOMMENDED SKILL CATEGORIES from the NARRATIVE ANALYSIS as the 3 skill sub-headers inside that section.
 - Each category should contain 3–5 real skills drawn from the candidate's data.
 - For broad engineering titles (Software Engineer, Software Developer, Web Developer, Full-Stack) the mix MUST include both frontend AND backend skills — never collapse to one side.
 - Never add a category not listed in RECOMMENDED SKILL CATEGORIES.
+
+CV LAYOUT RULE:
+- Use the CV LAYOUT specified in the NARRATIVE ANALYSIS. Never reorder sections.
+- engineering layout: SUMMARY → [SKILLS SECTION LABEL] → PROJECTS → EXPERIENCE → EDUCATION
+- support layout: SUMMARY → PROJECTS → EXPERIENCE → [SKILLS SECTION LABEL] → EDUCATION
 
 COMPANY CONTEXT RULE:
 - Use the COMPANY CONTEXT to decide which projects and examples are most relevant.
@@ -832,6 +893,13 @@ PROJECT RANKING RULE:
 - When a project has HIGH TECHNICAL RELEVANCE but lower domain fit, frame it through engineering complexity and transferable skill.
 - Do not include a project not listed in RANKED PROJECTS unless no listed project is available.
 
+PROJECT LINKS RULE:
+- Each project in RANKED PROJECTS may include a Live Demo URL and/or a GitHub URL.
+- When a Live Demo URL is provided, include it on the line after the project title: "Live Demo: <url>"
+- When a GitHub URL is provided, include it on the line after the project title (or after Live Demo): "GitHub: <url>"
+- If neither link is provided, omit links entirely. Do not invent URLs.
+- Do not use placeholder or example URLs.
+
 OUTPUT: Return ONLY a single valid JSON object with exactly these four string keys:
 tailoredCv, coverLetter, recruiterMessage, screeningAnswers.
 
@@ -844,22 +912,27 @@ tailoredCv format (STRICT max 400 words, plain text):
   SUMMARY
   2 sentences. Use the positioning strategy. Be specific about what value the candidate brings to this role.
 
-  SKILLS
-  Up to 3 role-relevant categories, max 5 items each.
-  Prioritise categories most relevant to the PRIMARY HIRING SIGNALS.
+  [Use CV LAYOUT from NARRATIVE ANALYSIS to order the remaining sections exactly]
+
+  [SKILLS SECTION LABEL from NARRATIVE ANALYSIS]
+  Up to 3 role-relevant categories (use RECOMMENDED SKILL CATEGORIES as sub-headers), max 5 items each.
   Format: CategoryName\n- item\n- item
 
-  SELECTED PROJECTS
-  Show only the STRONGEST RELEVANT PROJECTS (max 2).
-  Do not list projects that are irrelevant to this role.
-  Format: Project Name\n• bullet\n• bullet (max 2 bullets per project — achievements, not descriptions)
+  PROJECTS
+  Show only the RANKED PROJECTS (max 2).
+  Do not list projects not in RANKED PROJECTS.
+  Format:
+  Project Name
+  Live Demo: <url>  (only if provided in RANKED PROJECTS)
+  GitHub: <url>     (only if provided in RANKED PROJECTS)
+  - achievement (max 2 bullets per project — specific outcomes, not descriptions)
 
   EXPERIENCE
   Show only the STRONGEST RELEVANT EXPERIENCE (max 2 roles).
   Format:
   Role Title
   Company | Dates
-  • achievement (1 bullet only — specific, quantified where possible)
+  - achievement (1 bullet only — specific, quantified where possible)
 
   EDUCATION
   Degree, Institution, Year (one line)
@@ -1003,9 +1076,18 @@ export async function generateOpenAiMaterials(args: {
     `Primary hiring signals:`,
     ...narrative.primaryHiringSignals.map((s) => `- ${s}`),
     "",
-    `RANKED PROJECTS (follow this order; do not reorder):`,
+    `CV LAYOUT: ${narrative.cvLayout} (engineering = Summary→Skills→Projects→Experience→Education; support = Summary→Projects→Experience→Skills→Education)`,
+    `SKILLS SECTION LABEL (use this EXACTLY as the section heading): ${narrative.skillsSectionLabel}`,
+    "",
+    `RANKED PROJECTS (follow this order; include links as shown; do not reorder):`,
     ...(narrative.rankedProjectsWithReasons.length
-      ? narrative.rankedProjectsWithReasons.map((p) => `- ${p.name}${p.reason ? ` [${p.reason}]` : ""}`)
+      ? narrative.rankedProjectsWithReasons.map((p) => {
+          const links: string[] = [];
+          if (p.liveDemo) links.push(`Live Demo: ${p.liveDemo}`);
+          if (p.github)   links.push(`GitHub: ${p.github}`);
+          const linkStr = links.length ? ` | ${links.join(" | ")}` : "";
+          return `- ${p.name}${linkStr}${p.reason ? ` [${p.reason}]` : ""}`;
+        })
       : ["- (none identified — use whatever is available)"]),
     "",
     `Strongest relevant experience (prioritise these in CV):`,
