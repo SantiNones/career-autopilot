@@ -93,6 +93,8 @@ type CompanyContext = {
   label: string;    // human-readable summary for GPT prompt
 };
 
+type RankedProject = { name: string; reason: string };
+
 type NarrativeAnalysis = {
   targetTitle: string;              // Exact job title the CV headline must use
   roleEmphasis: string;             // Skill/project emphasis category — NEVER used as the title
@@ -101,7 +103,8 @@ type NarrativeAnalysis = {
   companyContext: CompanyContext;    // Detected industry/company type context
   recommendedSkillCategories: string[];  // Context-aware ordered skill categories for GPT
   coreSkillCategories: string[];    // Alias kept for backward compat
-  strongestRelevantProjects: string[];
+  rankedProjectsWithReasons: RankedProject[];  // Multi-dimensional scored projects with GPT reasons
+  strongestRelevantProjects: string[];          // Name-only alias for backward compat
   strongestRelevantExperience: string[];
   transferableStrengths: string[];
   candidateGaps: CandidateGap[];
@@ -189,117 +192,214 @@ function detectCompanyContext(job: Job): CompanyContext {
 }
 
 // ── Project metadata ──────────────────────────────────────────────────────────
-// Known candidate projects with semantic tags used for contextual scoring.
-// Matching is done against project block first-line names (case-insensitive).
-// New projects without metadata fall back to the generic signal-token scorer.
+// Extended schema: each project has separate technical and domain tag lists,
+// a maturity score (0–10), and human-readable maturity signals.
+// New/unknown projects fall back to the generic signal-token scorer.
 
-type ProjectMeta = { namePatterns: string[]; tags: string[] };
+type ProjectMeta = {
+  namePatterns: string[];
+  technicalTags: string[];   // Stack / engineering signals
+  domainTags: string[];      // Industry / domain signals
+  maturityScore: number;     // 0–10: deployed, production, complexity
+  maturitySignals: string;   // One-line justification (used in GPT reasons)
+};
 
 const PROJECT_METADATA: ProjectMeta[] = [
   {
-    namePatterns: ["projectflow", "project flow"],
-    tags: ["product", "saas", "frontend", "automation", "consulting", "ai", "workflow", "delivery", "fullstack"],
-  },
-  {
     namePatterns: ["career autopilot", "careerautopilot"],
-    tags: ["ai", "automation", "fullstack", "saas", "llm", "job_search", "workflow", "backend", "frontend"],
+    technicalTags: ["fullstack", "ai", "llm", "openai", "backend", "frontend", "postgres", "deployed", "automation", "workflow"],
+    domainTags: ["saas", "job_search", "workflow", "product"],
+    maturityScore: 8,
+    maturitySignals: "Deployed full-stack SaaS with OpenAI integration, Postgres, real production workflow.",
   },
   {
-    namePatterns: ["whatsapp agent", "whatsapp-agent", "whatsapp bot"],
-    tags: ["ai", "agents", "automation", "backend", "integrations", "whatsapp", "lead_qualification", "llm"],
-  },
-  {
-    namePatterns: ["ethnicraft"],
-    tags: ["frontend", "uiux", "ecommerce", "branding", "responsive", "figma", "product_presentation", "commercial_ui"],
+    namePatterns: ["projectflow", "project flow"],
+    technicalTags: ["fullstack", "frontend", "ai", "automation", "workflow", "saas", "deployed"],
+    domainTags: ["product", "saas", "consulting", "delivery", "workflow"],
+    maturityScore: 8,
+    maturitySignals: "Deployed MVP with complete product UI, AI-driven workflow, and consulting/delivery use case.",
   },
   {
     namePatterns: ["rise", "rise app"],
-    tags: ["frontend", "backend", "gamification", "psychology", "product", "state_management", "fullstack"],
+    technicalTags: ["fullstack", "frontend", "backend", "state_management"],
+    domainTags: ["gamification", "psychology", "product", "education"],
+    maturityScore: 7,
+    maturitySignals: "Complete full-stack bootcamp product with complex state management and product thinking.",
+  },
+  {
+    namePatterns: ["ethnicraft"],
+    technicalTags: ["frontend", "responsive", "figma", "uiux"],
+    domainTags: ["ecommerce", "branding", "product_presentation", "commercial_ui", "responsive"],
+    maturityScore: 6,
+    maturitySignals: "Deployed commercial UI with Figma-to-React implementation and ecommerce product presentation.",
+  },
+  {
+    namePatterns: ["whatsapp agent", "whatsapp-agent", "whatsapp bot"],
+    technicalTags: ["ai", "agents", "llm", "backend", "automation", "integrations"],
+    domainTags: ["whatsapp", "lead_qualification", "automation"],
+    maturityScore: 5,
+    maturitySignals: "Working AI agent integration but no persistent dashboard or full deployment.",
   },
   {
     namePatterns: ["station"],
-    tags: ["product", "reservations", "marketplace", "saas", "booking", "fullstack"],
+    technicalTags: ["fullstack", "backend"],
+    domainTags: ["reservations", "marketplace", "booking"],
+    maturityScore: 3,
+    maturitySignals: "Architecture / MVP concept — no deployed product, limited production evidence.",
   },
 ];
 
-function getProjectMeta(firstLine: string): string[] | null {
+type ProjectDimensionScore = {
+  name: string;
+  technicalRelevance: number;  // 0–1
+  domainRelevance: number;     // 0–1
+  maturity: number;            // 0–1 (normalised from 0–10)
+  finalScore: number;
+  reason: string;
+};
+
+function getProjectMeta(firstLine: string): ProjectMeta | null {
   const lower = firstLine.toLowerCase();
-  for (const { namePatterns, tags } of PROJECT_METADATA) {
-    if (namePatterns.some((p) => lower.includes(p))) return tags;
+  for (const meta of PROJECT_METADATA) {
+    if (meta.namePatterns.some((p) => lower.includes(p))) return meta;
   }
   return null;
 }
 
-// ── Context-aware project scorer ──────────────────────────────────────────────
-// Scores a project block using company context tags and role emphasis.
-// Known projects are scored via metadata; unknowns fall back to signal tokens.
+// ── Role-specific ranking weights ────────────────────────────────────────────
 
-function scoreProjectForContext(
+type RankingWeights = { technical: number; domain: number; maturity: number };
+
+function getProjectRankingWeights(roleEmphasis: string, companyTags: string[]): RankingWeights {
+  const e = roleEmphasis.toLowerCase();
+
+  if (e.includes("ai") || e.includes("automati")) {
+    return { technical: 0.65, domain: 0.25, maturity: 0.10 };
+  }
+  if (e.includes("frontend") && companyTags.includes("ecommerce")) {
+    return { technical: 0.45, domain: 0.35, maturity: 0.20 };
+  }
+  if (e.includes("frontend")) {
+    return { technical: 0.50, domain: 0.30, maturity: 0.20 };
+  }
+  if (e.includes("support") || e.includes("solutions")) {
+    return { technical: 0.35, domain: 0.35, maturity: 0.30 };
+  }
+  // Software Engineer / Full-Stack / Backend / default
+  return { technical: 0.50, domain: 0.25, maturity: 0.25 };
+}
+
+// ── Multi-dimensional project scorer ─────────────────────────────────────────
+// Known projects: scored via metadata tags.
+// Unknown projects: fall back to signal-token count (legacy behaviour).
+
+function scoreProjectDimensions(
   block: string,
   roleEmphasis: string,
   companyTags: string[],
   signalTokens: string[],
-): number {
+  weights: RankingWeights,
+): ProjectDimensionScore {
   const firstLine = block.split("\n")[0].replace(/^[#*•·\-]\s*/, "").trim();
   const meta = getProjectMeta(firstLine);
   const blockLower = block.toLowerCase();
 
-  let score = 0;
-
-  if (meta) {
-    // Score via metadata tags
-    const emphasisLower = roleEmphasis.toLowerCase();
-
-    // Direct company context overlap
-    for (const ctag of companyTags) {
-      if (meta.includes(ctag)) score += 3;
-    }
-
-    // Role emphasis alignment
-    if (emphasisLower.includes("frontend") && (meta.includes("frontend") || meta.includes("uiux") || meta.includes("ecommerce"))) score += 2;
-    if (emphasisLower.includes("ai")       && (meta.includes("ai")       || meta.includes("llm") || meta.includes("agents")))    score += 2;
-    if (emphasisLower.includes("backend")  && (meta.includes("backend")  || meta.includes("fullstack")))                         score += 2;
-    if (emphasisLower.includes("full")     && (meta.includes("fullstack")|| meta.includes("frontend") || meta.includes("backend"))) score += 1;
-    if (emphasisLower.includes("support")  && (meta.includes("product")  || meta.includes("saas") || meta.includes("workflow")))   score += 2;
-    if (emphasisLower.includes("automati") && (meta.includes("automation")|| meta.includes("workflow") || meta.includes("ai")))    score += 2;
-
-    // ecommerce-specific boost: commercial UI / product presentation
-    if (companyTags.includes("ecommerce") && (meta.includes("ecommerce") || meta.includes("commercial_ui") || meta.includes("product_presentation") || meta.includes("responsive"))) score += 4;
-
-    // General product / saas affinity
-    if (meta.includes("saas") || meta.includes("product")) score += 1;
-  } else {
-    // Unknown project: fall back to signal token matching
+  if (!meta) {
+    // Unknown project: pure signal-token fallback, normalised to 0–1
+    let tokenHits = 0;
     for (const token of signalTokens) {
-      if (blockLower.includes(token)) score += 1;
+      if (blockLower.includes(token)) tokenHits += 1;
     }
+    const raw = Math.min(tokenHits / Math.max(signalTokens.length, 1), 1);
+    const finalScore = raw * (weights.technical + weights.domain) + 0.5 * weights.maturity;
+    return {
+      name: firstLine,
+      technicalRelevance: raw,
+      domainRelevance: raw,
+      maturity: 0.5,
+      finalScore,
+      reason: "Unknown project — scored by keyword overlap.",
+    };
   }
 
-  return score;
+  const emphasisLower = roleEmphasis.toLowerCase();
+
+  // ── Technical relevance ───────────────────────────────────────────────────
+  let techScore = 0;
+  const techMax = 5;
+  if (emphasisLower.includes("ai") && meta.technicalTags.some((t) => ["ai", "llm", "agents", "openai"].includes(t))) techScore += 2;
+  if (emphasisLower.includes("frontend") && meta.technicalTags.some((t) => ["frontend", "uiux", "responsive", "figma"].includes(t))) techScore += 1;
+  if (emphasisLower.includes("backend") && meta.technicalTags.some((t) => ["backend", "fullstack", "postgres"].includes(t))) techScore += 1;
+  if (emphasisLower.includes("full") && meta.technicalTags.includes("fullstack")) techScore += 1;
+  if (emphasisLower.includes("automati") && meta.technicalTags.some((t) => ["automation", "workflow", "ai"].includes(t))) techScore += 2;
+  if (meta.technicalTags.includes("deployed")) techScore += 1;
+  const technicalRelevance = Math.min(techScore / techMax, 1);
+
+  // ── Domain relevance ──────────────────────────────────────────────────────
+  let domainScore = 0;
+  const domainMax = 4;
+  for (const ctag of companyTags) {
+    if (meta.domainTags.includes(ctag)) domainScore += 2;
+  }
+  // saas/product affinity bonus
+  if ((companyTags.includes("saas") || companyTags.includes("startup")) && (meta.domainTags.includes("saas") || meta.domainTags.includes("product"))) domainScore += 1;
+  // ecommerce-specific hard boost
+  if (companyTags.includes("ecommerce") && meta.domainTags.some((t) => ["ecommerce", "commercial_ui", "product_presentation", "responsive"].includes(t))) domainScore += 2;
+  const domainRelevance = Math.min(domainScore / domainMax, 1);
+
+  // ── Maturity ──────────────────────────────────────────────────────────────
+  const maturity = meta.maturityScore / 10;
+
+  // ── Final weighted score ──────────────────────────────────────────────────
+  const finalScore =
+    technicalRelevance * weights.technical +
+    domainRelevance    * weights.domain    +
+    maturity           * weights.maturity;
+
+  // ── Reason string for GPT ─────────────────────────────────────────────────
+  const reasonParts: string[] = [];
+  if (technicalRelevance >= 0.6) reasonParts.push(`strong technical relevance (${meta.technicalTags.slice(0, 4).join(", ")})`);
+  else if (technicalRelevance >= 0.3) reasonParts.push(`moderate technical relevance`);
+  if (domainRelevance >= 0.6) reasonParts.push(`strong domain relevance (${meta.domainTags.slice(0, 3).join(", ")})`);
+  else if (domainRelevance >= 0.3) reasonParts.push(`moderate domain relevance`);
+  reasonParts.push(meta.maturitySignals);
+  const reason = reasonParts.join("; ");
+
+  return { name: firstLine, technicalRelevance, domainRelevance, maturity, finalScore, reason };
 }
 
-// Context-aware project ranker — replaces the old generic rankAssets() for projects
+// ── Context-aware project ranker ──────────────────────────────────────────────
+// Returns ranked project names + reasons for GPT narrative block.
+
 function rankProjectsContextually(
   projectsText: string | null,
   roleEmphasis: string,
   companyTags: string[],
   signalTokens: string[],
   maxCount: number,
-): string[] {
+): { name: string; reason: string }[] {
   if (!projectsText?.trim()) return [];
   const blocks = projectsText.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
-  if (!blocks.length) return projectsText.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, maxCount);
+  if (!blocks.length) {
+    return projectsText.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, maxCount)
+      .map((name) => ({ name, reason: "" }));
+  }
 
-  const scored = blocks.map((block, idx) => ({
-    block,
-    // Small position penalty so equally-scored projects stay in resume order
-    score: scoreProjectForContext(block, roleEmphasis, companyTags, signalTokens) - idx * 0.1,
-  }));
+  const weights = getProjectRankingWeights(roleEmphasis, companyTags);
+
+  const scored = blocks.map((block, idx) => {
+    const dim = scoreProjectDimensions(block, roleEmphasis, companyTags, signalTokens, weights);
+    return {
+      ...dim,
+      // Small position penalty so equally-scored projects preserve resume order
+      finalScore: dim.finalScore - idx * 0.01,
+    };
+  });
 
   return scored
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.finalScore - a.finalScore)
     .slice(0, maxCount)
-    .map((x) => x.block.split("\n")[0].replace(/^[#*•·\-]\s*/, "").trim());
+    .map(({ name, reason }) => ({ name, reason }));
 }
 
 // ── Context-aware skill category ranker ──────────────────────────────────────
@@ -637,14 +737,16 @@ export function buildNarrativeAnalysis(
   ];
   const signalTokens = allSignals.flatMap((s) => s.toLowerCase().split(/[\s,/&]+/)).filter((t) => t.length > 2);
 
-  // Context-aware project ranking (new in Sprint #6)
-  const strongestRelevantProjects = rankProjectsContextually(
+  // Multi-dimensional project ranking (Sprint #7)
+  const rankedProjectsWithReasons = rankProjectsContextually(
     resume?.projects ?? null,
     roleEmphasis,
     companyContext.tags,
     signalTokens,
     3,
   );
+  // Name-only alias for backward compat and positioning strategy
+  const strongestRelevantProjects = rankedProjectsWithReasons.map((p) => p.name);
 
   // Experience ranking still uses generic signal scorer
   const strongestRelevantExperience = rankAssets(resume?.experience ?? null, allSignals, 2);
@@ -672,6 +774,7 @@ export function buildNarrativeAnalysis(
     companyContext,
     recommendedSkillCategories,
     coreSkillCategories,
+    rankedProjectsWithReasons,
     strongestRelevantProjects,
     strongestRelevantExperience,
     transferableStrengths,
@@ -721,7 +824,13 @@ COMPANY CONTEXT RULE:
 - ai / enterprise context → prioritise projects demonstrating agentic systems, LLM pipelines, backend reliability.
 - support / saas context → prioritise projects demonstrating troubleshooting, product thinking, workflow.
 - consulting / agency context → prioritise projects demonstrating delivery, client value, breadth.
-- Follow the ranked project order in STRONGEST RELEVANT PROJECTS — do not reorder them.
+
+PROJECT RANKING RULE:
+- Follow the RANKED PROJECTS order in the NARRATIVE ANALYSIS exactly. Do not reorder them.
+- Each project entry includes a REASON that tells you WHY it was ranked in that position.
+- When a project has HIGH DOMAIN RELEVANCE but lower technical depth, frame it through product/domain fit and real-world context.
+- When a project has HIGH TECHNICAL RELEVANCE but lower domain fit, frame it through engineering complexity and transferable skill.
+- Do not include a project not listed in RANKED PROJECTS unless no listed project is available.
 
 OUTPUT: Return ONLY a single valid JSON object with exactly these four string keys:
 tailoredCv, coverLetter, recruiterMessage, screeningAnswers.
@@ -894,9 +1003,9 @@ export async function generateOpenAiMaterials(args: {
     `Primary hiring signals:`,
     ...narrative.primaryHiringSignals.map((s) => `- ${s}`),
     "",
-    `Strongest relevant projects (prioritise these in CV and screening answers):`,
-    ...(narrative.strongestRelevantProjects.length
-      ? narrative.strongestRelevantProjects.map((p) => `- ${p}`)
+    `RANKED PROJECTS (follow this order; do not reorder):`,
+    ...(narrative.rankedProjectsWithReasons.length
+      ? narrative.rankedProjectsWithReasons.map((p) => `- ${p.name}${p.reason ? ` [${p.reason}]` : ""}`)
       : ["- (none identified — use whatever is available)"]),
     "",
     `Strongest relevant experience (prioritise these in CV):`,
