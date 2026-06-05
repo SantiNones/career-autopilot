@@ -89,8 +89,11 @@ type CandidateGap = {
 };
 
 type NarrativeAnalysis = {
-  roleCategory: string;
+  targetTitle: string;       // Exact job title the CV headline must use
+  roleEmphasis: string;      // Skill/project emphasis category — NEVER used as the title
+  roleCategory: string;      // Legacy alias of roleEmphasis (kept for positioning strategy)
   primaryHiringSignals: string[];
+  coreSkillCategories: string[];  // Ordered skill-category guidance for GPT
   strongestRelevantProjects: string[];
   strongestRelevantExperience: string[];
   transferableStrengths: string[];
@@ -98,6 +101,63 @@ type NarrativeAnalysis = {
   recruiterReassurances: string[];
   positioningStrategy: string;
 };
+
+// ── Target title detector ─────────────────────────────────────────────────────
+// Priority 1: use the actual job title when it is concrete and reasonable.
+// Priority 2: if it includes a seniority level above the candidate's detected
+//             seniority, downgrade to the honest equivalent.
+// We never fabricate or rephrase the role category into the title.
+
+const SENIOR_PREFIXES = ["senior", "staff", "principal", "lead", "director", "head of", "vp of"];
+const JUNIOR_SIGNALS  = ["junior", "jr", "associate", "graduate", "entry", "intern", "trainee"];
+
+function detectTargetTitle(
+  jobTitle: string | null,
+  fitAnalysis: FitAnalysisInput | null,
+): string {
+  const raw = jobTitle?.trim() ?? "";
+  if (!raw || raw.length < 3) return "Software Engineer";
+
+  const lower = raw.toLowerCase();
+  const candidateSeniority = (fitAnalysis?.seniorityDetected ?? "").toLowerCase();
+  const isJuniorCandidate = JUNIOR_SIGNALS.some((s) => candidateSeniority.includes(s));
+
+  // If the job is senior-level but the candidate is clearly junior, strip the prefix
+  if (isJuniorCandidate && SENIOR_PREFIXES.some((p) => lower.startsWith(p))) {
+    // Remove the seniority prefix to produce the honest equivalent
+    for (const prefix of SENIOR_PREFIXES) {
+      if (lower.startsWith(prefix)) {
+        const remainder = raw.slice(prefix.length).replace(/^[\s,]+/, "").trim();
+        return remainder.length > 2 ? remainder : raw;
+      }
+    }
+  }
+
+  // All other cases: use the exact title as-is
+  return raw;
+}
+
+// ── Core skill mix builder ────────────────────────────────────────────────────
+// Instructs GPT which skill *categories* to include in the CV SKILLS section.
+// The mix depends on role emphasis so a "Software Engineer" role keeps both
+// frontend and backend skills rather than collapsing to one side.
+
+const SKILL_MIX: Record<string, string[]> = {
+  "Frontend Engineer":          ["Frontend (React, TypeScript, CSS, Next.js)", "Tools & Workflow", "Testing & Quality"],
+  "Backend Engineer":           ["Backend (Node.js, Python, APIs, SQL)", "Infrastructure & Deployment", "Tools & Workflow"],
+  "Full-Stack Engineer":        ["Frontend", "Backend", "Tools & Deployment"],
+  "AI Engineer":                ["AI & LLM (OpenAI, agents, structured output)", "Backend & APIs", "Tools & Infrastructure"],
+  "Software Developer":         ["Frontend", "Backend", "Tools & Workflow"],  // broad mix preserved
+  "Automation Engineer":        ["Workflow Automation (n8n, Zapier, APIs)", "Backend & Scripting", "Tools"],
+  "DevOps / Platform Engineer": ["Infrastructure & Cloud", "CI/CD & Containers", "Monitoring & Reliability"],
+  "Data Engineer":              ["Data & SQL", "Pipelines & ETL", "Backend & Scripting"],
+  "Solutions Engineer":         ["Technical Stack", "Integration & APIs", "Communication & Documentation"],
+  "Product Support":            ["Technical Troubleshooting", "Support Tools", "Communication"],
+};
+
+function buildCoreSkillMix(roleEmphasis: string): string[] {
+  return SKILL_MIX[roleEmphasis] ?? SKILL_MIX["Software Developer"]!;
+}
 
 // ── Role category detector ────────────────────────────────────────────────────
 
@@ -345,6 +405,12 @@ export function buildNarrativeAnalysis(
 ): NarrativeAnalysis {
   const { category, primaryHiringSignals } = detectRoleCategory(job.title, job.rawText);
 
+  // targetTitle: what goes on the CV headline — always the actual job title, never the emphasis label
+  const targetTitle = detectTargetTitle(job.title, fitAnalysis);
+  // roleEmphasis: drives skill/project prioritisation only, never the headline
+  const roleEmphasis = category;
+  const coreSkillCategories = buildCoreSkillMix(roleEmphasis);
+
   // Rank projects and experience by relevance to hiring signals
   const allSignals = [
     ...primaryHiringSignals,
@@ -371,8 +437,11 @@ export function buildNarrativeAnalysis(
   );
 
   return {
+    targetTitle,
+    roleEmphasis,
     roleCategory: category,
     primaryHiringSignals,
+    coreSkillCategories,
     strongestRelevantProjects,
     strongestRelevantExperience,
     transferableStrengths,
@@ -402,6 +471,19 @@ STRICT RULES — follow all of them:
 - Tone: professional, human, and concise. Write like a person, not a template.
 - Do not repeat identical sentences across materials.
 - Build a coherent professional narrative across all four materials.
+
+TARGET TITLE RULE (CRITICAL — never violate):
+- The CV headline MUST be the exact TARGET TITLE from the NARRATIVE ANALYSIS.
+- TARGET TITLE = the job title. ROLE EMPHASIS = what to emphasise in skills and projects.
+- These are SEPARATE concepts. ROLE EMPHASIS never becomes the headline.
+- CORRECT example: Target Title "Junior Software Engineer", Role Emphasis "Frontend" → headline "Junior Software Engineer"
+- WRONG example: Target Title "Junior Software Engineer", Role Emphasis "Frontend" → headline "Junior Frontend Developer"
+- Use the CORE SKILL CATEGORIES to decide which skill groups to include — do NOT collapse to a single category.
+
+SKILLS SECTION RULE:
+- Use the CORE SKILL CATEGORIES provided in the NARRATIVE ANALYSIS to structure the SKILLS section.
+- For "Software Engineer" or "Full-Stack" roles the skill mix MUST include both frontend AND backend skills.
+- Never collapse a broad role to only frontend or only backend skills.
 
 OUTPUT: Return ONLY a single valid JSON object with exactly these four string keys:
 tailoredCv, coverLetter, recruiterMessage, screeningAnswers.
@@ -563,8 +645,12 @@ export async function generateOpenAiMaterials(args: {
   );
 
   const narrativeLines = [
-    `Role category: ${narrative.roleCategory}`,
+    `TARGET TITLE (use this EXACTLY as the CV headline): ${narrative.targetTitle}`,
+    `ROLE EMPHASIS (use only for skill/project bias — NOT the headline): ${narrative.roleEmphasis}`,
     `Positioning strategy: ${narrative.positioningStrategy}`,
+    "",
+    `Core skill categories (structure the CV SKILLS section using these):`,
+    ...narrative.coreSkillCategories.map((c) => `- ${c}`),
     "",
     `Primary hiring signals:`,
     ...narrative.primaryHiringSignals.map((s) => `- ${s}`),
