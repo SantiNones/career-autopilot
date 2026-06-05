@@ -1,15 +1,33 @@
 import { NextResponse } from "next/server";
 
+import { MaterialType } from "@prisma/client";
+
 import { prisma } from "@/lib/db";
 import { generateMaterials } from "@/server/materialGeneration";
 import { generateOpenAiMaterials } from "@/server/openaiMaterials";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   props: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await props.params;
+
+    // Selection flags — default all true so existing callers without a body still work
+    const body = await req.json().catch(() => ({})) as {
+      generateCv?: boolean;
+      generateCoverLetter?: boolean;
+      generateRecruiterMessage?: boolean;
+      generateScreeningAnswers?: boolean;
+    };
+    const generateCv              = body.generateCv              ?? true;
+    const generateCoverLetter     = body.generateCoverLetter     ?? true;
+    const generateRecruiterMessage= body.generateRecruiterMessage?? true;
+    const generateScreeningAnswers= body.generateScreeningAnswers?? true;
+
+    if (!generateCv && !generateCoverLetter && !generateRecruiterMessage && !generateScreeningAnswers) {
+      return NextResponse.json({ error: "Select at least one material." }, { status: 400 });
+    }
 
     const [job, profile, resume, rawFitAnalysis] = await Promise.all([
       prisma.jobPosting.findUnique({
@@ -81,16 +99,18 @@ export async function POST(
       generated = generateMaterials(job, profileArg, prefs, resume, ev, fitAnalysis);
     }
 
-    const materialTypeMap = {
-      TAILORED_CV: generated.tailoredCv,
-      COVER_LETTER: generated.coverLetter,
-      RECRUITER_MESSAGE: generated.recruiterMessage,
-      SCREENING_ANSWERS: generated.screeningAnswers,
-    } as const;
+    // Only persist the material types the user selected; others remain untouched.
+    const materialTypeMap: Partial<Record<string, string>> = {
+      ...(generateCv              ? { TAILORED_CV:        generated.tailoredCv        } : {}),
+      ...(generateCoverLetter     ? { COVER_LETTER:       generated.coverLetter       } : {}),
+      ...(generateRecruiterMessage? { RECRUITER_MESSAGE:  generated.recruiterMessage  } : {}),
+      ...(generateScreeningAnswers? { SCREENING_ANSWERS:  generated.screeningAnswers  } : {}),
+    };
 
     const results = [];
 
-    for (const [type, content] of Object.entries(materialTypeMap) as Array<[keyof typeof materialTypeMap, string]>) {
+    for (const [typeStr, content] of Object.entries(materialTypeMap) as Array<[string, string]>) {
+      const type = typeStr as MaterialType;
       const existing = await prisma.jobMaterial.findFirst({
         where: { jobPostingId: id, type },
         orderBy: { version: "desc" },

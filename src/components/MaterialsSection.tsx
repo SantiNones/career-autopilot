@@ -89,6 +89,20 @@ function MaterialCard({ mat, jobId }: { mat: Material; jobId: string }) {
   );
 }
 
+type Selection = {
+  cv: boolean;
+  coverLetter: boolean;
+  recruiterMessage: boolean;
+  screeningAnswers: boolean;
+};
+
+const SELECTION_LABELS: Array<{ key: keyof Selection; label: string }> = [
+  { key: "cv",               label: "Tailored CV" },
+  { key: "coverLetter",      label: "Cover Letter" },
+  { key: "recruiterMessage", label: "Recruiter Message" },
+  { key: "screeningAnswers", label: "Screening Answers" },
+];
+
 export function MaterialsSection({
   jobId,
   initialMaterials,
@@ -101,6 +115,12 @@ export function MaterialsSection({
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("TAILORED_CV");
   const [generatedBy, setGeneratedBy] = useState<"openai" | "template" | null>(null);
+  const [selection, setSelection] = useState<Selection>({
+    cv: true,
+    coverLetter: true,
+    recruiterMessage: true,
+    screeningAnswers: true,
+  });
 
   const latestByType = new Map<string, Material>();
   for (const mat of initialMaterials) {
@@ -113,11 +133,32 @@ export function MaterialsSection({
   const hasMaterials = latestByType.size > 0;
   const activeMat = latestByType.get(activeTab) ?? null;
 
+  const noneSelected = !selection.cv && !selection.coverLetter && !selection.recruiterMessage && !selection.screeningAnswers;
+  const allSelected  =  selection.cv &&  selection.coverLetter &&  selection.recruiterMessage &&  selection.screeningAnswers;
+
+  function toggleAll(checked: boolean) {
+    setSelection({ cv: checked, coverLetter: checked, recruiterMessage: checked, screeningAnswers: checked });
+  }
+
+  function toggleOne(key: keyof Selection, checked: boolean) {
+    setSelection((prev) => ({ ...prev, [key]: checked }));
+  }
+
   async function handleGenerate() {
+    if (noneSelected) return;
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/jobs/${jobId}/generate-materials`, { method: "POST" });
+      const res = await fetch(`/api/jobs/${jobId}/generate-materials`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          generateCv:              selection.cv,
+          generateCoverLetter:     selection.coverLetter,
+          generateRecruiterMessage:selection.recruiterMessage,
+          generateScreeningAnswers:selection.screeningAnswers,
+        }),
+      });
       const json = (await res.json()) as { error?: string; generatedBy?: "openai" | "template" };
       if (!res.ok) throw new Error(json.error ?? "Failed");
       if (json.generatedBy) setGeneratedBy(json.generatedBy);
@@ -132,33 +173,67 @@ export function MaterialsSection({
   return (
     <div className="rounded-xl border border-zinc-200 bg-white">
       {/* Section header */}
-      <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Application Materials</h2>
-          <p className="mt-0.5 text-xs text-zinc-400">
-            Drafts are generated from your saved profile and master resume. Review before sending.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {generatedBy && (
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                generatedBy === "openai"
-                  ? "bg-purple-100 text-purple-700"
-                  : "bg-zinc-100 text-zinc-500"
-              }`}
+      <div className="border-b border-zinc-100 px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900">Application Materials</h2>
+            <p className="mt-0.5 text-xs text-zinc-400">
+              Drafts are generated from your saved profile and master resume. Review before sending.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {generatedBy && (
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  generatedBy === "openai"
+                    ? "bg-purple-100 text-purple-700"
+                    : "bg-zinc-100 text-zinc-500"
+                }`}
+              >
+                {generatedBy === "openai" ? "AI Generated" : "Template Generated"}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleGenerate()}
+              disabled={generating || noneSelected}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
             >
-              {generatedBy === "openai" ? "AI Generated" : "Template Generated"}
-            </span>
+              {generating ? "Generating…" : "Generate Selected"}
+            </button>
+          </div>
+        </div>
+
+        {/* Material selector */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+          {/* Select All */}
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={(e) => toggleAll(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-zinc-300 accent-indigo-600"
+            />
+            <span className="text-xs font-semibold text-zinc-700">Select All</span>
+          </label>
+
+          <span className="text-zinc-200">|</span>
+
+          {SELECTION_LABELS.map(({ key, label }) => (
+            <label key={key} className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={selection[key]}
+                onChange={(e) => toggleOne(key, e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-zinc-300 accent-indigo-600"
+              />
+              <span className="text-xs text-zinc-600">{label}</span>
+            </label>
+          ))}
+
+          {noneSelected && (
+            <span className="text-xs text-rose-500">Select at least one material.</span>
           )}
-          <button
-            type="button"
-            onClick={() => void handleGenerate()}
-            disabled={generating}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {generating ? "Generating…" : hasMaterials ? "Regenerate All" : "Generate All Materials"}
-          </button>
         </div>
       </div>
 
@@ -177,7 +252,7 @@ export function MaterialsSection({
         <div className="px-5 py-12 text-center">
           <p className="text-sm text-zinc-400">No materials yet.</p>
           <p className="mt-1 text-xs text-zinc-300">
-            Click &ldquo;Generate All Materials&rdquo; to create tailored drafts.
+            Click &ldquo;Generate Selected&rdquo; to create tailored drafts.
           </p>
         </div>
       ) : (
