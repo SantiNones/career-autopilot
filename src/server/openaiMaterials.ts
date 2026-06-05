@@ -88,12 +88,19 @@ type CandidateGap = {
   mitigation: string;
 };
 
+type CompanyContext = {
+  tags: string[];   // e.g. ["startup", "ecommerce", "saas"]
+  label: string;    // human-readable summary for GPT prompt
+};
+
 type NarrativeAnalysis = {
-  targetTitle: string;       // Exact job title the CV headline must use
-  roleEmphasis: string;      // Skill/project emphasis category — NEVER used as the title
-  roleCategory: string;      // Legacy alias of roleEmphasis (kept for positioning strategy)
+  targetTitle: string;              // Exact job title the CV headline must use
+  roleEmphasis: string;             // Skill/project emphasis category — NEVER used as the title
+  roleCategory: string;             // Legacy alias of roleEmphasis (kept for positioning strategy)
   primaryHiringSignals: string[];
-  coreSkillCategories: string[];  // Ordered skill-category guidance for GPT
+  companyContext: CompanyContext;    // Detected industry/company type context
+  recommendedSkillCategories: string[];  // Context-aware ordered skill categories for GPT
+  coreSkillCategories: string[];    // Alias kept for backward compat
   strongestRelevantProjects: string[];
   strongestRelevantExperience: string[];
   transferableStrengths: string[];
@@ -137,26 +144,230 @@ function detectTargetTitle(
   return raw;
 }
 
-// ── Core skill mix builder ────────────────────────────────────────────────────
-// Instructs GPT which skill *categories* to include in the CV SKILLS section.
-// The mix depends on role emphasis so a "Software Engineer" role keeps both
-// frontend and backend skills rather than collapsing to one side.
+// ── Company context detector ─────────────────────────────────────────────────
+// Detects industry / company-type tags from job title, company name, and JD.
+// Tags are used to boost contextually relevant projects in scoring.
 
-const SKILL_MIX: Record<string, string[]> = {
-  "Frontend Engineer":          ["Frontend (React, TypeScript, CSS, Next.js)", "Tools & Workflow", "Testing & Quality"],
-  "Backend Engineer":           ["Backend (Node.js, Python, APIs, SQL)", "Infrastructure & Deployment", "Tools & Workflow"],
-  "Full-Stack Engineer":        ["Frontend", "Backend", "Tools & Deployment"],
-  "AI Engineer":                ["AI & LLM (OpenAI, agents, structured output)", "Backend & APIs", "Tools & Infrastructure"],
-  "Software Developer":         ["Frontend", "Backend", "Tools & Workflow"],  // broad mix preserved
-  "Automation Engineer":        ["Workflow Automation (n8n, Zapier, APIs)", "Backend & Scripting", "Tools"],
-  "DevOps / Platform Engineer": ["Infrastructure & Cloud", "CI/CD & Containers", "Monitoring & Reliability"],
-  "Data Engineer":              ["Data & SQL", "Pipelines & ETL", "Backend & Scripting"],
-  "Solutions Engineer":         ["Technical Stack", "Integration & APIs", "Communication & Documentation"],
-  "Product Support":            ["Technical Troubleshooting", "Support Tools", "Communication"],
-};
+const COMPANY_CONTEXT_RULES: Array<{ tags: string[]; signals: string[] }> = [
+  { tags: ["ecommerce"],      signals: ["ecommerce", "e-commerce", "shop", "store", "checkout", "cart", "post-purchase", "shopify", "woocommerce", "retail"] },
+  { tags: ["ai"],             signals: ["ai", "llm", "machine learning", "artificial intelligence", "openai", "langchain", "agentic", "nlp", "genai"] },
+  { tags: ["saas"],           signals: ["saas", "software as a service", "platform", "subscription", "b2b", "b2c", "product-led"] },
+  { tags: ["startup"],        signals: ["startup", "seed", "series a", "series b", "early-stage", "scale-up", "scaleup", "fast-paced", "small team"] },
+  { tags: ["enterprise"],     signals: ["enterprise", "fortune 500", "global", "large organisation", "corporate", "multinational"] },
+  { tags: ["insurance"],      signals: ["insurance", "underwriting", "claims", "actuarial", "reinsurance", "zurich", "axa", "allianz"] },
+  { tags: ["consulting"],     signals: ["consulting", "consultancy", "bpo", "outsourc", "bairesd", "agency", "professional services"] },
+  { tags: ["marketplace"],    signals: ["marketplace", "listing", "seller", "buyer", "auction", "booking", "reservation"] },
+  { tags: ["developer_tools"],signals: ["developer tool", "devtool", "sdk", "api platform", "ci/cd", "developer platform", "ashby", "linear", "vercel"] },
+  { tags: ["support"],        signals: ["support", "helpdesk", "customer success", "service desk", "ticket", "zendesk", "intercom"] },
+  { tags: ["recruiting"],     signals: ["recruiting", "talent", "hr tech", "applicant tracking", "ats", "hire"] },
+  { tags: ["automation"],     signals: ["automation", "rpa", "workflow automation", "n8n", "zapier", "make.com", "process automation"] },
+];
 
-function buildCoreSkillMix(roleEmphasis: string): string[] {
-  return SKILL_MIX[roleEmphasis] ?? SKILL_MIX["Software Developer"]!;
+function detectCompanyContext(job: Job): CompanyContext {
+  const needle = [
+    job.title ?? "",
+    job.companyName ?? "",
+    job.rawText?.slice(0, 2000) ?? "",
+  ].join(" ").toLowerCase();
+
+  const tags: string[] = [];
+  for (const { tags: ruleTags, signals } of COMPANY_CONTEXT_RULES) {
+    if (signals.some((s) => needle.includes(s))) {
+      tags.push(...ruleTags);
+    }
+  }
+
+  // Heuristic: small companies with product language are likely startups/SaaS
+  const isLikelyStartup = needle.includes("startup") || needle.includes("scale") || (tags.includes("saas") && !tags.includes("enterprise"));
+  if (isLikelyStartup && !tags.includes("startup")) tags.push("startup");
+
+  const uniqueTags = [...new Set(tags)];
+  if (!uniqueTags.length) uniqueTags.push("unknown");
+
+  const label = uniqueTags.join(", ");
+  return { tags: uniqueTags, label };
+}
+
+// ── Project metadata ──────────────────────────────────────────────────────────
+// Known candidate projects with semantic tags used for contextual scoring.
+// Matching is done against project block first-line names (case-insensitive).
+// New projects without metadata fall back to the generic signal-token scorer.
+
+type ProjectMeta = { namePatterns: string[]; tags: string[] };
+
+const PROJECT_METADATA: ProjectMeta[] = [
+  {
+    namePatterns: ["projectflow", "project flow"],
+    tags: ["product", "saas", "frontend", "automation", "consulting", "ai", "workflow", "delivery", "fullstack"],
+  },
+  {
+    namePatterns: ["career autopilot", "careerautopilot"],
+    tags: ["ai", "automation", "fullstack", "saas", "llm", "job_search", "workflow", "backend", "frontend"],
+  },
+  {
+    namePatterns: ["whatsapp agent", "whatsapp-agent", "whatsapp bot"],
+    tags: ["ai", "agents", "automation", "backend", "integrations", "whatsapp", "lead_qualification", "llm"],
+  },
+  {
+    namePatterns: ["ethnicraft"],
+    tags: ["frontend", "uiux", "ecommerce", "branding", "responsive", "figma", "product_presentation", "commercial_ui"],
+  },
+  {
+    namePatterns: ["rise", "rise app"],
+    tags: ["frontend", "backend", "gamification", "psychology", "product", "state_management", "fullstack"],
+  },
+  {
+    namePatterns: ["station"],
+    tags: ["product", "reservations", "marketplace", "saas", "booking", "fullstack"],
+  },
+];
+
+function getProjectMeta(firstLine: string): string[] | null {
+  const lower = firstLine.toLowerCase();
+  for (const { namePatterns, tags } of PROJECT_METADATA) {
+    if (namePatterns.some((p) => lower.includes(p))) return tags;
+  }
+  return null;
+}
+
+// ── Context-aware project scorer ──────────────────────────────────────────────
+// Scores a project block using company context tags and role emphasis.
+// Known projects are scored via metadata; unknowns fall back to signal tokens.
+
+function scoreProjectForContext(
+  block: string,
+  roleEmphasis: string,
+  companyTags: string[],
+  signalTokens: string[],
+): number {
+  const firstLine = block.split("\n")[0].replace(/^[#*•·\-]\s*/, "").trim();
+  const meta = getProjectMeta(firstLine);
+  const blockLower = block.toLowerCase();
+
+  let score = 0;
+
+  if (meta) {
+    // Score via metadata tags
+    const emphasisLower = roleEmphasis.toLowerCase();
+
+    // Direct company context overlap
+    for (const ctag of companyTags) {
+      if (meta.includes(ctag)) score += 3;
+    }
+
+    // Role emphasis alignment
+    if (emphasisLower.includes("frontend") && (meta.includes("frontend") || meta.includes("uiux") || meta.includes("ecommerce"))) score += 2;
+    if (emphasisLower.includes("ai")       && (meta.includes("ai")       || meta.includes("llm") || meta.includes("agents")))    score += 2;
+    if (emphasisLower.includes("backend")  && (meta.includes("backend")  || meta.includes("fullstack")))                         score += 2;
+    if (emphasisLower.includes("full")     && (meta.includes("fullstack")|| meta.includes("frontend") || meta.includes("backend"))) score += 1;
+    if (emphasisLower.includes("support")  && (meta.includes("product")  || meta.includes("saas") || meta.includes("workflow")))   score += 2;
+    if (emphasisLower.includes("automati") && (meta.includes("automation")|| meta.includes("workflow") || meta.includes("ai")))    score += 2;
+
+    // ecommerce-specific boost: commercial UI / product presentation
+    if (companyTags.includes("ecommerce") && (meta.includes("ecommerce") || meta.includes("commercial_ui") || meta.includes("product_presentation") || meta.includes("responsive"))) score += 4;
+
+    // General product / saas affinity
+    if (meta.includes("saas") || meta.includes("product")) score += 1;
+  } else {
+    // Unknown project: fall back to signal token matching
+    for (const token of signalTokens) {
+      if (blockLower.includes(token)) score += 1;
+    }
+  }
+
+  return score;
+}
+
+// Context-aware project ranker — replaces the old generic rankAssets() for projects
+function rankProjectsContextually(
+  projectsText: string | null,
+  roleEmphasis: string,
+  companyTags: string[],
+  signalTokens: string[],
+  maxCount: number,
+): string[] {
+  if (!projectsText?.trim()) return [];
+  const blocks = projectsText.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  if (!blocks.length) return projectsText.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, maxCount);
+
+  const scored = blocks.map((block, idx) => ({
+    block,
+    // Small position penalty so equally-scored projects stay in resume order
+    score: scoreProjectForContext(block, roleEmphasis, companyTags, signalTokens) - idx * 0.1,
+  }));
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxCount)
+    .map((x) => x.block.split("\n")[0].replace(/^[#*•·\-]\s*/, "").trim());
+}
+
+// ── Context-aware skill category ranker ──────────────────────────────────────
+// Produces ordered skill-category labels for GPT's SKILLS section.
+// The targetTitle drives the mix; roleEmphasis and companyContext refine it.
+
+const BROAD_SW_PATTERNS = [
+  "software engineer", "software developer", "junior developer",
+  "application developer", "full-stack developer", "fullstack developer",
+  "full stack developer", "web developer",
+];
+const FRONTEND_PATTERNS  = ["frontend", "front-end", "front end", "react developer", "ui engineer", "ui developer"];
+const AI_PATTERNS        = ["ai engineer", "agentic", "llm", "automation engineer", "ml engineer"];
+const SUPPORT_PATTERNS   = ["product support", "technical support", "customer support", "implementation", "solutions", "support specialist"];
+const BACKEND_PATTERNS   = ["backend", "back-end", "api engineer", "server-side"];
+
+function rankSkillCategories(
+  targetTitle: string,
+  roleEmphasis: string,
+  companyTags: string[],
+): string[] {
+  const t = targetTitle.toLowerCase();
+
+  // Broad engineering roles — always keep frontend + backend mix
+  if (BROAD_SW_PATTERNS.some((p) => t.includes(p))) {
+    if (companyTags.includes("ecommerce")) {
+      return ["Frontend (React, TypeScript, Next.js, CSS)", "Backend & APIs (Node.js, Python, PostgreSQL)", "Tools & Workflow"];
+    }
+    if (companyTags.includes("ai")) {
+      return ["Frontend", "Backend & APIs", "AI & Integration"];
+    }
+    return ["Frontend (React, TypeScript, Next.js)", "Backend & APIs (Node.js, Python, PostgreSQL)", "Tools & Workflow"];
+  }
+
+  // Explicit frontend roles
+  if (FRONTEND_PATTERNS.some((p) => t.includes(p))) {
+    return ["Frontend (React, TypeScript, CSS, Next.js)", "UI & Design Systems", "Tools & Integration"];
+  }
+
+  // AI / Automation roles
+  if (AI_PATTERNS.some((p) => t.includes(p))) {
+    return ["AI / LLM Systems (OpenAI, agents, structured output)", "Backend & APIs (Node.js, Python)", "Tools & Infrastructure"];
+  }
+
+  // Support / Solutions / Implementation roles
+  if (SUPPORT_PATTERNS.some((p) => t.includes(p))) {
+    return ["Technical Troubleshooting & Investigation", "Product & Operations", "Web & APIs"];
+  }
+
+  // Backend-explicit roles
+  if (BACKEND_PATTERNS.some((p) => t.includes(p))) {
+    return ["Backend & APIs (Node.js, Python, SQL)", "Infrastructure & Deployment", "Tools & Workflow"];
+  }
+
+  // Fallback: use roleEmphasis-based mix (Sprint #5 logic)
+  const EMPHASIS_MIX: Record<string, string[]> = {
+    "Frontend Engineer":          ["Frontend (React, TypeScript, CSS, Next.js)", "Tools & Workflow", "Testing & Quality"],
+    "Backend Engineer":           ["Backend (Node.js, Python, APIs, SQL)", "Infrastructure & Deployment", "Tools & Workflow"],
+    "Full-Stack Engineer":        ["Frontend", "Backend", "Tools & Deployment"],
+    "AI Engineer":                ["AI & LLM (OpenAI, agents, structured output)", "Backend & APIs", "Tools & Infrastructure"],
+    "Software Developer":         ["Frontend", "Backend & APIs", "Tools & Workflow"],
+    "Automation Engineer":        ["Workflow Automation (n8n, Zapier, APIs)", "Backend & Scripting", "Tools"],
+    "DevOps / Platform Engineer": ["Infrastructure & Cloud", "CI/CD & Containers", "Monitoring & Reliability"],
+    "Data Engineer":              ["Data & SQL", "Pipelines & ETL", "Backend & Scripting"],
+    "Solutions Engineer":         ["Technical Stack", "Integration & APIs", "Communication & Documentation"],
+    "Product Support":            ["Technical Troubleshooting", "Support Tools", "Communication"],
+  };
+  return EMPHASIS_MIX[roleEmphasis] ?? ["Frontend", "Backend & APIs", "Tools & Workflow"];
 }
 
 // ── Role category detector ────────────────────────────────────────────────────
@@ -409,16 +620,33 @@ export function buildNarrativeAnalysis(
   const targetTitle = detectTargetTitle(job.title, fitAnalysis);
   // roleEmphasis: drives skill/project prioritisation only, never the headline
   const roleEmphasis = category;
-  const coreSkillCategories = buildCoreSkillMix(roleEmphasis);
 
-  // Rank projects and experience by relevance to hiring signals
+  // Company context: startup/ecommerce/ai/etc tags used for project + skill scoring
+  const companyContext = detectCompanyContext(job);
+
+  // Context-aware skill categories (replaces Sprint #5 buildCoreSkillMix)
+  const recommendedSkillCategories = rankSkillCategories(targetTitle, roleEmphasis, companyContext.tags);
+  // Keep coreSkillCategories as an alias for backward compatibility
+  const coreSkillCategories = recommendedSkillCategories;
+
+  // Signal tokens for experience ranking (still uses generic ranker) and unknown-project fallback
   const allSignals = [
     ...primaryHiringSignals,
     ...(fitAnalysis?.matchingSkills ?? []),
     ...(fitAnalysis?.matchingProjects ?? []),
   ];
+  const signalTokens = allSignals.flatMap((s) => s.toLowerCase().split(/[\s,/&]+/)).filter((t) => t.length > 2);
 
-  const strongestRelevantProjects = rankAssets(resume?.projects ?? null, allSignals, 3);
+  // Context-aware project ranking (new in Sprint #6)
+  const strongestRelevantProjects = rankProjectsContextually(
+    resume?.projects ?? null,
+    roleEmphasis,
+    companyContext.tags,
+    signalTokens,
+    3,
+  );
+
+  // Experience ranking still uses generic signal scorer
   const strongestRelevantExperience = rankAssets(resume?.experience ?? null, allSignals, 2);
 
   // Transferable strengths: use fitAnalysis strengths filtered to be substantive
@@ -441,6 +669,8 @@ export function buildNarrativeAnalysis(
     roleEmphasis,
     roleCategory: category,
     primaryHiringSignals,
+    companyContext,
+    recommendedSkillCategories,
     coreSkillCategories,
     strongestRelevantProjects,
     strongestRelevantExperience,
@@ -478,12 +708,20 @@ TARGET TITLE RULE (CRITICAL — never violate):
 - These are SEPARATE concepts. ROLE EMPHASIS never becomes the headline.
 - CORRECT example: Target Title "Junior Software Engineer", Role Emphasis "Frontend" → headline "Junior Software Engineer"
 - WRONG example: Target Title "Junior Software Engineer", Role Emphasis "Frontend" → headline "Junior Frontend Developer"
-- Use the CORE SKILL CATEGORIES to decide which skill groups to include — do NOT collapse to a single category.
 
 SKILLS SECTION RULE:
-- Use the CORE SKILL CATEGORIES provided in the NARRATIVE ANALYSIS to structure the SKILLS section.
-- For "Software Engineer" or "Full-Stack" roles the skill mix MUST include both frontend AND backend skills.
-- Never collapse a broad role to only frontend or only backend skills.
+- Use the RECOMMENDED SKILL CATEGORIES from the NARRATIVE ANALYSIS as the 3 skill section headers in the CV.
+- Each category should contain 3–5 real skills drawn from the candidate's data.
+- For broad engineering titles (Software Engineer, Software Developer, Web Developer, Full-Stack) the mix MUST include both frontend AND backend skills — never collapse to one side.
+- Never add a category not listed in RECOMMENDED SKILL CATEGORIES.
+
+COMPANY CONTEXT RULE:
+- Use the COMPANY CONTEXT to decide which projects and examples are most relevant.
+- ecommerce context → prioritise projects demonstrating commercial UI, responsive design, product presentation.
+- ai / enterprise context → prioritise projects demonstrating agentic systems, LLM pipelines, backend reliability.
+- support / saas context → prioritise projects demonstrating troubleshooting, product thinking, workflow.
+- consulting / agency context → prioritise projects demonstrating delivery, client value, breadth.
+- Follow the ranked project order in STRONGEST RELEVANT PROJECTS — do not reorder them.
 
 OUTPUT: Return ONLY a single valid JSON object with exactly these four string keys:
 tailoredCv, coverLetter, recruiterMessage, screeningAnswers.
@@ -647,10 +885,11 @@ export async function generateOpenAiMaterials(args: {
   const narrativeLines = [
     `TARGET TITLE (use this EXACTLY as the CV headline): ${narrative.targetTitle}`,
     `ROLE EMPHASIS (use only for skill/project bias — NOT the headline): ${narrative.roleEmphasis}`,
+    `Company context: ${narrative.companyContext.label}`,
     `Positioning strategy: ${narrative.positioningStrategy}`,
     "",
-    `Core skill categories (structure the CV SKILLS section using these):`,
-    ...narrative.coreSkillCategories.map((c) => `- ${c}`),
+    `RECOMMENDED SKILL CATEGORIES (use these as the 3 SKILLS section headers in the CV):`,
+    ...narrative.recommendedSkillCategories.map((c) => `- ${c}`),
     "",
     `Primary hiring signals:`,
     ...narrative.primaryHiringSignals.map((s) => `- ${s}`),
