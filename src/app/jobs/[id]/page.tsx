@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/db";
 import { DeleteJobButton } from "@/components/DeleteJobButton";
+import { EditJobDetailsForm } from "@/components/EditJobDetailsForm";
 import { MaterialsSection } from "@/components/MaterialsSection";
 import { StatusControls, StatusBadge } from "@/components/StatusControls";
 import { UpdateDescriptionForm } from "@/components/UpdateDescriptionForm";
@@ -161,6 +162,12 @@ export default async function JobDetailPage(props: {
                 })}
                 {job.source ? ` · ${job.source}` : ""}
               </p>
+              <EditJobDetailsForm
+                jobId={job.id}
+                initialTitle={job.title ?? ""}
+                initialCompany={job.companyName ?? ""}
+                initialSourceUrl={job.sourceUrl}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
               {ev && (
