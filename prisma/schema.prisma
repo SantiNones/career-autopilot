@@ -40,10 +40,15 @@ model UserProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  fullName  String?
-  headline  String?
-  location  String?
-  languages Json?
+  fullName     String?
+  headline     String?
+  location     String?
+  phone        String?
+  email        String?
+  linkedinUrl  String?
+  githubUrl    String?
+  portfolioUrl String?
+  languages    Json?
 
   preferences CandidatePreferences?
 }

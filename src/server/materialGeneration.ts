@@ -2,6 +2,11 @@ type Profile = {
   fullName: string | null;
   headline: string | null;
   location: string | null;
+  phone: string | null;
+  email: string | null;
+  linkedinUrl: string | null;
+  githubUrl: string | null;
+  portfolioUrl: string | null;
   languages: unknown;
 };
 
@@ -434,7 +439,6 @@ export function generateTailoredCvV2(args: {
   const name = candidateName(profile);
   const location = profile.location ?? job.location ?? "";
   const langStr = str(resume?.languages || profile.languages);
-  const links = resume?.links?.trim() ?? "";
   const education = resume?.education?.trim() ?? "";
 
   // ── Headline: first segment only — never a pipe-separated list ────────────
@@ -444,6 +448,25 @@ export function generateTailoredCvV2(args: {
     fitAnalysis.recommendedAngle ||
     str(prefs?.targetTitles).split(",")[0]?.trim() ||
     "Software Developer";
+
+  // ── Contact line: location · phone · email ────────────────────────────────
+  const contactParts = [
+    location,
+    profile.phone?.trim() ?? "",
+    profile.email?.trim() ?? "",
+  ].filter(Boolean);
+  const contactLine = contactParts.join(" · ");
+
+  // ── Links line: label-based (LinkedIn · GitHub · Portfolio) ───────────────
+  const linkLabels: string[] = [];
+  if (profile.linkedinUrl?.trim()) linkLabels.push(`LinkedIn: ${profile.linkedinUrl.trim()}`);
+  if (profile.githubUrl?.trim()) linkLabels.push(`GitHub: ${profile.githubUrl.trim()}`);
+  if (profile.portfolioUrl?.trim()) linkLabels.push(`Portfolio: ${profile.portfolioUrl.trim()}`);
+  // Fall back to resume links if no structured profile links
+  if (!linkLabels.length && resume?.links?.trim()) {
+    resume.links.trim().split("\n").filter(Boolean).forEach((l) => linkLabels.push(l));
+  }
+  const linksLine = linkLabels.join("\n");
 
   // ── Summary: role-specific, generic phrases scrubbed ─────────────────────
   const summary = scrubGenericPhrases(buildRoleSummary(resume, fitAnalysis));
@@ -471,8 +494,9 @@ export function generateTailoredCvV2(args: {
   const parts: string[] = [];
 
   parts.push(name);
-  parts.push([headline, location, langStr].filter(Boolean).join(" · "));
-  if (links) parts.push(links);
+  parts.push(headline);
+  if (contactLine) parts.push(contactLine);
+  if (linksLine) parts.push(linksLine);
 
   parts.push("", "");
   parts.push("SUMMARY");
@@ -500,6 +524,12 @@ export function generateTailoredCvV2(args: {
     parts.push("", "");
     parts.push("EDUCATION");
     parts.push(education);
+  }
+
+  if (langStr) {
+    parts.push("", "");
+    parts.push("LANGUAGES");
+    parts.push(langStr);
   }
 
   return parts.join("\n").trim();

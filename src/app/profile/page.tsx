@@ -78,6 +78,11 @@ export default async function ProfilePage() {
                 fullName: created.fullName,
                 headline: created.headline,
                 location: created.location,
+                phone: (created as { phone?: string | null }).phone ?? null,
+                email: (created as { email?: string | null }).email ?? null,
+                linkedinUrl: (created as { linkedinUrl?: string | null }).linkedinUrl ?? null,
+                githubUrl: (created as { githubUrl?: string | null }).githubUrl ?? null,
+                portfolioUrl: (created as { portfolioUrl?: string | null }).portfolioUrl ?? null,
                 languages: (created.languages as unknown as string[]) ?? [],
                 preferences: {
                   targetTitles:
@@ -126,6 +131,11 @@ export default async function ProfilePage() {
               fullName: profile.fullName,
               headline: profile.headline,
               location: profile.location,
+              phone: (profile as { phone?: string | null }).phone ?? null,
+              email: (profile as { email?: string | null }).email ?? null,
+              linkedinUrl: (profile as { linkedinUrl?: string | null }).linkedinUrl ?? null,
+              githubUrl: (profile as { githubUrl?: string | null }).githubUrl ?? null,
+              portfolioUrl: (profile as { portfolioUrl?: string | null }).portfolioUrl ?? null,
               languages: (profile.languages as unknown as string[]) ?? [],
               preferences: {
                 targetTitles:

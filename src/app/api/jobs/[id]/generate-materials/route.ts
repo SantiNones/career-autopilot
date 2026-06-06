@@ -64,7 +64,7 @@ export async function POST(
         }
       : null;
 
-    const profileArg = profile ?? { fullName: null, headline: null, location: null, languages: [] };
+    const profileArg = profile ?? { fullName: null, headline: null, location: null, phone: null, email: null, linkedinUrl: null, githubUrl: null, portfolioUrl: null, languages: [] };
     const hasOpenAiKey = !!process.env.OPENAI_API_KEY;
 
     type GeneratedMaterials = {

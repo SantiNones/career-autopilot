@@ -17,6 +17,11 @@ type Profile = {
   fullName: string | null;
   headline: string | null;
   location: string | null;
+  phone: string | null;
+  email: string | null;
+  linkedinUrl: string | null;
+  githubUrl: string | null;
+  portfolioUrl: string | null;
   languages: string[];
   preferences: Preferences;
 };
@@ -36,6 +41,11 @@ export function ProfileForm(props: { initial: Profile }) {
   const [fullName, setFullName] = useState(props.initial.fullName ?? "");
   const [headline, setHeadline] = useState(props.initial.headline ?? "");
   const [location, setLocation] = useState(props.initial.location ?? "");
+  const [phone, setPhone] = useState(props.initial.phone ?? "");
+  const [email, setEmail] = useState(props.initial.email ?? "");
+  const [linkedinUrl, setLinkedinUrl] = useState(props.initial.linkedinUrl ?? "");
+  const [githubUrl, setGithubUrl] = useState(props.initial.githubUrl ?? "");
+  const [portfolioUrl, setPortfolioUrl] = useState(props.initial.portfolioUrl ?? "");
   const [languages, setLanguages] = useState(joinLines(props.initial.languages ?? []));
 
   const [targetTitles, setTargetTitles] = useState(
@@ -69,6 +79,11 @@ export function ProfileForm(props: { initial: Profile }) {
       fullName: fullName.trim() || null,
       headline: headline.trim() || null,
       location: location.trim() || null,
+      phone: phone.trim() || null,
+      email: email.trim() || null,
+      linkedinUrl: linkedinUrl.trim() || null,
+      githubUrl: githubUrl.trim() || null,
+      portfolioUrl: portfolioUrl.trim() || null,
       languages: splitLines(languages),
       preferences: {
         targetTitles: splitLines(targetTitles),
@@ -85,6 +100,11 @@ export function ProfileForm(props: { initial: Profile }) {
     fullName,
     headline,
     location,
+    phone,
+    email,
+    linkedinUrl,
+    githubUrl,
+    portfolioUrl,
     languages,
     targetTitles,
     positiveKeywords,
@@ -144,41 +164,91 @@ export function ProfileForm(props: { initial: Profile }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-zinc-900">Full name</label>
-          <input
-            className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-zinc-900">Headline</label>
-          <input
-            className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
-            value={headline}
-            onChange={(e) => setHeadline(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-zinc-900">Location</label>
-          <input
-            className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-zinc-900">
-            Languages (one per line)
-          </label>
-          <textarea
-            className="min-h-24 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
-            value={languages}
-            onChange={(e) => setLanguages(e.target.value)}
-          />
+    <div className="flex flex-col gap-6">
+      <div>
+        <h3 className="mb-3 text-sm font-semibold text-zinc-700">Personal Information</h3>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Full name</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Headline / Role</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={headline}
+              onChange={(e) => setHeadline(e.target.value)}
+              placeholder="e.g. Full-Stack Developer"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Location</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="e.g. Barcelona, Spain"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Phone</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+34 600 000 000"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Email</label>
+            <input
+              type="email"
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">LinkedIn URL</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+              placeholder="https://linkedin.com/in/yourname"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">GitHub URL</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={githubUrl}
+              onChange={(e) => setGithubUrl(e.target.value)}
+              placeholder="https://github.com/yourname"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Portfolio URL</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={portfolioUrl}
+              onChange={(e) => setPortfolioUrl(e.target.value)}
+              placeholder="https://yoursite.com"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Languages (one per line)</label>
+            <textarea
+              className="min-h-20 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={languages}
+              onChange={(e) => setLanguages(e.target.value)}
+              placeholder="Spanish - Native&#10;English - Fluent"
+            />
+          </div>
         </div>
       </div>
 

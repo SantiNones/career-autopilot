@@ -6,6 +6,11 @@ type ProfilePayload = {
   fullName?: string | null;
   headline?: string | null;
   location?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  linkedinUrl?: string | null;
+  githubUrl?: string | null;
+  portfolioUrl?: string | null;
   languages?: string[] | null;
   preferences?: {
     targetTitles?: string[] | null;
@@ -70,6 +75,11 @@ export async function POST(req: Request) {
         fullName: body.fullName ?? null,
         headline: body.headline ?? null,
         location: body.location ?? null,
+        phone: body.phone ?? null,
+        email: body.email ?? null,
+        linkedinUrl: body.linkedinUrl ?? null,
+        githubUrl: body.githubUrl ?? null,
+        portfolioUrl: body.portfolioUrl ?? null,
         languages: body.languages ?? [],
         preferences: {
           upsert: {

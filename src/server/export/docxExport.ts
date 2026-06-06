@@ -99,9 +99,6 @@ export async function generateDocxFromText(content: string): Promise<Buffer> {
         paragraphs.push(new Paragraph({
           children: [new TextRun({ text: t, bold: true, size: 22, color: "111111" })],
           spacing: { before: 200, after: 80 },
-          border: {
-            bottom: { color: "CCCCCC", space: 1, style: BorderStyle.SINGLE, size: 4 },
-          },
         }));
         break;
 
