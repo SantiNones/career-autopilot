@@ -245,10 +245,32 @@ function deduplicateProjectBlock(block: string): string {
   return kept.join("\n");
 }
 
+// True if every non-empty line in a block is a link line.
+function isAllLinkBlock(block: string): boolean {
+  const nonEmpty = block.split("\n").map((l) => l.trim()).filter(Boolean);
+  return nonEmpty.length > 0 && nonEmpty.every(isLinkLine);
+}
+
+// Merge orphan link-only blocks into the preceding project block.
+// DOCX often emits: "PROJECT TITLE\n\nLive Demo: url | GitHub: url"
+// as two separate blank-line-separated blocks. Reunite them first.
+function mergeOrphanLinkBlocks(blocks: string[]): string[] {
+  const merged: string[] = [];
+  for (const block of blocks) {
+    if (merged.length > 0 && isAllLinkBlock(block)) {
+      merged[merged.length - 1] = merged[merged.length - 1] + "\n" + block;
+    } else {
+      merged.push(block);
+    }
+  }
+  return merged;
+}
+
 function backfillProjectLinks(projectsText: string): string {
   if (!projectsText.trim()) return projectsText;
 
-  const blocks = projectsText.split(/\n{2,}/);
+  const rawBlocks = projectsText.split(/\n{2,}/);
+  const blocks = mergeOrphanLinkBlocks(rawBlocks);
 
   const patched = blocks.map((block) => {
     // Phase 1: canonicalize combined link lines into separate lines
