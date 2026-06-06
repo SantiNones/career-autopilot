@@ -2,6 +2,7 @@ export type LineType =
   | "name"
   | "role"
   | "contact"
+  | "link-bar"   // aggregated header links rendered as "LinkedIn | GitHub"
   | "divider"
   | "section-heading"
   | "project-title"
@@ -10,10 +11,13 @@ export type LineType =
   | "blank"
   | "paragraph";
 
+export type LinkBarEntry = { label: string; url: string };
+
 export type ParsedLine = {
   type: LineType;
   text: string;
   url?: string;
+  links?: LinkBarEntry[];  // only on link-bar
 };
 
 const SECTION_HEADINGS = new Set([
@@ -36,9 +40,6 @@ function isSectionHeading(line: string): boolean {
 
 function isProjectTitle(line: string): boolean {
   const t = line.trim();
-  // Has uppercase start + dash/em-dash separator + mixed case description
-  // e.g. "CAREER AUTOPILOT — AI-Powered Job Application Copilot"
-  // or   "PROJECTFLOW AI — Project Intake & Delivery Planning Tool"
   return /^[A-Z][A-Z\s]{1,30}[\u2014\-\u2013]{1,3}.+/.test(t);
 }
 
@@ -58,55 +59,106 @@ function isLinkLine(line: string): boolean {
   return stripped.length === 0 && /https?:\/\//.test(t);
 }
 
+function isHeaderContactLine(line: string): boolean {
+  const t = line.trim();
+  // phone, email, or location-like (no URL, not a section heading)
+  return (
+    /^[+\d(]/.test(t) ||               // phone
+    t.includes("@") ||                   // email
+    /^[\w\s,]+$/.test(t)               // plain text (location, city)
+  );
+}
+
 function extractFirstUrl(line: string): string | undefined {
   const m = line.match(/https?:\/\/\S+/);
   return m ? m[0].replace(/[.,;)]+$/, "") : undefined;
+}
+
+// Parse "LinkedIn: https://..." or "GitHub: https://..." into label+url
+function parseLinkLabel(line: string): LinkBarEntry | null {
+  const t = line.trim();
+  // "Label: url" pattern
+  const colonMatch = t.match(/^([^:]+):\s*(https?:\/\/\S+)/);
+  if (colonMatch) {
+    return { label: colonMatch[1].trim(), url: colonMatch[2].replace(/[.,;)]+$/, "") };
+  }
+  // bare URL — derive label from domain
+  const urlMatch = t.match(/^(https?:\/\/\S+)/);
+  if (urlMatch) {
+    const url = urlMatch[1].replace(/[.,;)]+$/, "");
+    const domain = url.replace(/https?:\/\/(www\.)?/, "").split("/")[0].split(".").slice(-2, -1)[0] ?? "Link";
+    return { label: domain.charAt(0).toUpperCase() + domain.slice(1), url };
+  }
+  return null;
 }
 
 export function parseMaterialForExport(content: string): ParsedLine[] {
   const rawLines = content.split("\n");
   const result: ParsedLine[] = [];
 
-  // Detect header block: first non-blank line = name, next non-blank non-link = role,
-  // first link-like or contact-like line after = contact.
-  // We scan the top of the document before the first section heading.
-  let headerDone = false;
-  let nameFound = false;
-  let roleFound = false;
-  let contactFound = false;
+  // ── Locate header boundary: everything before the first section heading ──────
   let firstSectionIdx = rawLines.findIndex((l) => isSectionHeading(l.trim()));
   if (firstSectionIdx === -1) firstSectionIdx = rawLines.length;
 
-  for (let i = 0; i < rawLines.length; i++) {
-    const raw = rawLines[i];
-    const trimmed = raw.trim();
+  let i = 0;
+  let nameFound = false;
+  let roleFound = false;
 
-    // ── Header block ──────────────────────────────────────────────────────────
-    if (!headerDone && i < firstSectionIdx) {
-      if (!trimmed) {
-        result.push({ type: "blank", text: "" });
-        continue;
-      }
-      if (!nameFound) {
-        result.push({ type: "name", text: trimmed });
-        nameFound = true;
-        continue;
-      }
-      if (!roleFound && !isLinkLine(trimmed) && !trimmed.includes("@") && !trimmed.match(/^[+\d(]/)) {
-        result.push({ type: "role", text: trimmed });
-        roleFound = true;
-        continue;
-      }
-      if (!contactFound) {
-        result.push({ type: "contact", text: trimmed, url: extractFirstUrl(trimmed) });
-        contactFound = true;
-        result.push({ type: "divider", text: "" });
-        headerDone = true;
-        continue;
-      }
+  // ── Header block ─────────────────────────────────────────────────────────────
+  // name → role → any number of contact lines → any number of link lines → divider
+  const headerLinkLines: string[] = [];
+
+  while (i < firstSectionIdx) {
+    const trimmed = rawLines[i].trim();
+    i++;
+
+    if (!trimmed) {
+      if (!nameFound) result.push({ type: "blank", text: "" });
+      continue;
     }
 
-    // ── Body ──────────────────────────────────────────────────────────────────
+    if (!nameFound) {
+      result.push({ type: "name", text: trimmed });
+      nameFound = true;
+      continue;
+    }
+
+    if (!roleFound && !isLinkLine(trimmed) && !isHeaderContactLine(trimmed)) {
+      result.push({ type: "role", text: trimmed });
+      roleFound = true;
+      continue;
+    }
+
+    // After name+role: collect contact lines and link lines
+    if (isLinkLine(trimmed)) {
+      headerLinkLines.push(trimmed);
+    } else if (isHeaderContactLine(trimmed)) {
+      result.push({ type: "contact", text: trimmed });
+    }
+  }
+
+  // Aggregate all header link lines into one link-bar entry
+  if (headerLinkLines.length > 0) {
+    const entries: LinkBarEntry[] = [];
+    for (const ll of headerLinkLines) {
+      const parsed = parseLinkLabel(ll);
+      if (parsed) entries.push(parsed);
+    }
+    if (entries.length > 0) {
+      result.push({ type: "link-bar", text: entries.map((e) => e.label).join(" | "), links: entries });
+    }
+  }
+
+  // Header divider (only if we found a name)
+  if (nameFound) {
+    result.push({ type: "divider", text: "" });
+  }
+
+  // ── Body ─────────────────────────────────────────────────────────────────────
+  while (i < rawLines.length) {
+    const trimmed = rawLines[i].trim();
+    i++;
+
     if (!trimmed) {
       result.push({ type: "blank", text: "" });
       continue;
