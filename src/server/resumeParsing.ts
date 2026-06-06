@@ -162,14 +162,71 @@ function extractPersonalLinksFromHeader(headerLines: string[]): string {
   return personalUrls.map(labelUrl).join("\n");
 }
 
+const URL_REGEX_FRESH = () =>
+  /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)/g;
+
+// Extract every normalized URL present anywhere in a text string.
+function extractNormedUrls(text: string): Set<string> {
+  const matches = text.match(URL_REGEX_FRESH()) ?? [];
+  return new Set(matches.map(normalizeUrl));
+}
+
+// True if a line is purely a link-label line (e.g. "GitHub: url", "Live Demo: url | GitHub: url").
+function isLinkLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  // Strip all URLs, then strip known label prefixes and pipe separators
+  const withoutLinks = trimmed
+    .replace(URL_REGEX_FRESH(), "")
+    .replace(/\|\s*/g, "")
+    .replace(/^(live demo|github|linkedin|portfolio|demo)\s*:\s*/gi, "")
+    .trim();
+  // If nothing meaningful remains, it is purely a link line
+  return withoutLinks.length === 0;
+}
+
+// Deduplicate link lines inside a single project block.
+// Strategy:
+//   - Track every normalized URL we have "accepted" so far (per block).
+//   - For each line, if it is a link line AND all its URLs are already accepted → drop it.
+//   - Otherwise, accept it (and record its URLs as accepted).
+// This eliminates exact duplicates AND combined lines whose individual URLs were already emitted.
+function deduplicateProjectBlock(block: string): string {
+  const lines = block.split("\n");
+  const acceptedUrls = new Set<string>();
+  const kept: string[] = [];
+
+  for (const line of lines) {
+    if (!isLinkLine(line)) {
+      kept.push(line);
+      continue;
+    }
+    const lineUrls = extractNormedUrls(line);
+    if (lineUrls.size === 0) {
+      kept.push(line);
+      continue;
+    }
+    // Drop this line only if every URL it contains was already accepted
+    const allAlreadySeen = [...lineUrls].every((u) => acceptedUrls.has(u));
+    if (allAlreadySeen) continue;
+    // Accept this line — record its URLs
+    for (const u of lineUrls) acceptedUrls.add(u);
+    kept.push(line);
+  }
+
+  return kept.join("\n");
+}
+
 function backfillProjectLinks(projectsText: string): string {
   if (!projectsText.trim()) return projectsText;
 
   const blocks = projectsText.split(/\n{2,}/);
 
   const patched = blocks.map((block) => {
-    const firstLine = block.split("\n")[0].toLowerCase();
+    // Phase 1: remove duplicate link lines within the block
+    const deduped = deduplicateProjectBlock(block);
 
+    const firstLine = deduped.split("\n")[0].toLowerCase();
     const meta = PROJECT_LINK_MAP.find((entry) =>
       entry.namePatterns.some((p) => {
         try {
@@ -179,14 +236,11 @@ function backfillProjectLinks(projectsText: string): string {
         }
       }),
     );
-    if (!meta) return block;
+    if (!meta) return deduped;
 
-    // Collect all normalised URLs already present in this block
-    const existingNorm = new Set<string>(
-      (block.match(URL_REGEX) ?? []).map((u) => normalizeUrl(u)),
-    );
-
-    const lines = block.split("\n");
+    // Phase 2: inject only URLs still missing after dedup
+    const existingNorm = extractNormedUrls(deduped);
+    const dedupedLines = deduped.split("\n");
     const toInsert: string[] = [];
 
     if (meta.liveDemo && !existingNorm.has(normalizeUrl(meta.liveDemo))) {
@@ -196,9 +250,9 @@ function backfillProjectLinks(projectsText: string): string {
       toInsert.push(`GitHub: ${meta.github}`);
     }
 
-    if (!toInsert.length) return block;
+    if (!toInsert.length) return deduped;
 
-    return [lines[0], ...toInsert, ...lines.slice(1)].join("\n");
+    return [dedupedLines[0], ...toInsert, ...dedupedLines.slice(1)].join("\n");
   });
 
   return patched.join("\n\n");
