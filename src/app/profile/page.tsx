@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { MasterResumeForm } from "@/components/MasterResumeForm";
 import { ProfileForm } from "@/components/ProfileForm";
+import { ExperienceIntelligencePanel } from "@/components/ExperienceIntelligencePanel";
 
 function NavBar() {
   return (
@@ -112,6 +113,16 @@ export default async function ProfilePage() {
               <MasterResumeForm initial={resumeToForm(resume)} />
             </div>
           </div>
+
+          <div className="mt-8">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-zinc-900">Experience Intelligence</h2>
+              <p className="mt-0.5 text-sm text-zinc-500">Structured insights extracted from your work history.</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-6">
+              <ExperienceIntelligencePanel />
+            </div>
+          </div>
         </main>
       </div>
     );
@@ -163,6 +174,16 @@ export default async function ProfilePage() {
           </div>
           <div className="rounded-xl border border-zinc-200 bg-white p-6">
             <MasterResumeForm initial={resumeToForm(resume)} />
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-zinc-900">Experience Intelligence</h2>
+            <p className="mt-0.5 text-sm text-zinc-500">Structured insights extracted from your work history.</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-white p-6">
+            <ExperienceIntelligencePanel />
           </div>
         </div>
       </main>

@@ -223,6 +223,19 @@ model ResumeMaster {
   education  String?
   languages  String?
   links      String?
+
+  experienceInsight ExperienceInsight?
+}
+
+model ExperienceInsight {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resumeMasterId String       @unique
+  resumeMaster   ResumeMaster @relation(fields: [resumeMasterId], references: [id], onDelete: Cascade)
+
+  insights Json
 }
 
 model AutomationRun {
