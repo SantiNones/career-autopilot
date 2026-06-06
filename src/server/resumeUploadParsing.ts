@@ -68,6 +68,20 @@ export async function extractFromFile(
   return { rawText, links };
 }
 
+// ── URL helpers ───────────────────────────────────────────────────────────────
+
+function normalizeUrl(raw: string): string {
+  const withoutLabel = raw.replace(/^[^:]+:\s+(?=https?:\/\/)/i, "").trim();
+  const noTrail = withoutLabel.replace(/[.,;)]+$/, "");
+  try {
+    const u = new URL(noTrail);
+    const pathname = u.pathname === "/" ? "" : u.pathname.replace(/\/$/, "");
+    return `${u.protocol}//${u.hostname.toLowerCase()}${pathname}${u.search}${u.hash}`;
+  } catch {
+    return noTrail.toLowerCase();
+  }
+}
+
 function labelUrl(url: string): string {
   const lower = url.toLowerCase();
   if (lower.includes("linkedin.com")) return `LinkedIn: ${url}`;
@@ -76,9 +90,45 @@ function labelUrl(url: string): string {
   return url;
 }
 
+// Known project-specific URLs — these belong in Projects, not in Links.
+const KNOWN_PROJECT_URLS: Set<string> = new Set([
+  "https://projectflow-ai-chi.vercel.app/",
+  "https://github.com/SantiNones/projectflow-ai",
+  "https://github.com/SantiNones/career-autopilot",
+  "https://ethnicraft-hek8qyip6-santiago-nones-projects.vercel.app/",
+  "https://github.com/SantiNones/ethnicraft",
+  "https://rise-app.onrender.com/",
+  "https://github.com/SantiNones/rise-habit-tracker",
+  "https://github.com/SantiNones/station-app",
+].map(normalizeUrl));
+
+function isProjectUrl(url: string): boolean {
+  return KNOWN_PROJECT_URLS.has(normalizeUrl(url));
+}
+
+function isPersonalUrl(url: string): boolean {
+  if (isProjectUrl(url)) return false;
+  const lower = url.toLowerCase();
+  if (lower.includes("linkedin.com")) return true;
+  if (lower.includes("github.com")) {
+    try {
+      const parts = new URL(url).pathname.replace(/^\//, "").split("/").filter(Boolean);
+      return parts.length <= 1;
+    } catch { return false; }
+  }
+  return false;
+}
+
 export function extractLinks(text: string): string[] {
   const matches = text.match(LINK_REGEX) ?? [];
   const cleaned = matches.map((u) => u.replace(/[.,;)]+$/, ""));
-  const unique = Array.from(new Set(cleaned));
-  return unique.map(labelUrl);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const url of cleaned) {
+    const norm = normalizeUrl(url);
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    if (isPersonalUrl(url)) result.push(labelUrl(url));
+  }
+  return result;
 }

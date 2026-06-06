@@ -44,19 +44,23 @@ function emptyState(): ResumeSections {
   };
 }
 
-function extractUrlFromLine(line: string): string {
-  const m = line.match(/https?:\/\/\S+/);
-  return m ? m[0].replace(/[.,;)]+$/, "") : line;
+function normalizeUrl(raw: string): string {
+  const withoutLabel = raw.replace(/^[^:]+:\s+(?=https?:\/\/)/i, "").trim();
+  const noTrail = withoutLabel.replace(/[.,;)]+$/, "");
+  try {
+    const u = new URL(noTrail);
+    const pathname = u.pathname === "/" ? "" : u.pathname.replace(/\/$/, "");
+    return `${u.protocol}//${u.hostname.toLowerCase()}${pathname}${u.search}${u.hash}`;
+  } catch {
+    return noTrail.toLowerCase();
+  }
 }
 
 function mergeLinks(existing: string, newLinks: string[]): string {
   if (!newLinks.length) return existing;
   const existingLines = existing.split("\n").map((l) => l.trim()).filter(Boolean);
-  const existingUrls = new Set(existingLines.map(extractUrlFromLine));
-  const toAdd = newLinks.filter((l) => {
-    const url = extractUrlFromLine(l);
-    return !existingUrls.has(url) && !existingLines.some((e) => e.includes(url) || url.includes(extractUrlFromLine(e)));
-  });
+  const existingNorms = new Set(existingLines.map(normalizeUrl));
+  const toAdd = newLinks.filter((l) => !existingNorms.has(normalizeUrl(l)));
   if (!toAdd.length) return existing;
   return [...existingLines, ...toAdd].join("\n");
 }
@@ -66,6 +70,8 @@ export function MasterResumeForm({ initial }: Props) {
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +100,29 @@ export function MasterResumeForm({ initial }: Props) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleClearResume() {
+    setClearing(true);
+    setSaveMsg(null);
+    setError(null);
+    try {
+      const empty = emptyState();
+      const res = await fetch("/api/profile/resume", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(empty),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to clear");
+      setData(empty);
+      setSaveMsg("Resume cleared.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setClearing(false);
+      setConfirmClear(false);
     }
   }
 
@@ -256,7 +285,7 @@ export function MasterResumeForm({ initial }: Props) {
           value={data.rawText}
           onChange={(e) => updateField("rawText", e.target.value)}
         />
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleParse}
@@ -273,6 +302,36 @@ export function MasterResumeForm({ initial }: Props) {
           >
             {saving ? "Saving…" : "Save Resume"}
           </button>
+          {!confirmClear ? (
+            <button
+              type="button"
+              onClick={() => setConfirmClear(true)}
+              disabled={clearing}
+              className="ml-auto rounded-lg border border-rose-300 bg-white px-4 py-2 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-400 hover:bg-rose-50 disabled:opacity-50"
+            >
+              Clear Resume
+            </button>
+          ) : (
+            <span className="ml-auto flex items-center gap-2">
+              <span className="text-xs text-zinc-500">Are you sure? This cannot be undone.</span>
+              <button
+                type="button"
+                onClick={() => void handleClearResume()}
+                disabled={clearing}
+                className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+              >
+                {clearing ? "Clearing…" : "Yes, clear"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmClear(false)}
+                disabled={clearing}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </span>
+          )}
         </div>
       </div>
 

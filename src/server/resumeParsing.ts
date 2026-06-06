@@ -88,6 +88,23 @@ function detectHeading(line: string): keyof ParsedResume | null {
   return null;
 }
 
+// ── URL helpers ───────────────────────────────────────────────────────────────
+
+function normalizeUrl(raw: string): string {
+  // Strip label prefix like "LinkedIn: " or "GitHub: " or "Live Demo: "
+  const withoutLabel = raw.replace(/^[^:]+:\s+(?=https?:\/\/)/i, "").trim();
+  // Remove trailing punctuation
+  const noTrail = withoutLabel.replace(/[.,;)]+$/, "");
+  try {
+    const u = new URL(noTrail);
+    // Lowercase hostname; remove trailing slash from pathname
+    const pathname = u.pathname === "/" ? "" : u.pathname.replace(/\/$/, "");
+    return `${u.protocol}//${u.hostname.toLowerCase()}${pathname}${u.search}${u.hash}`;
+  } catch {
+    return noTrail.toLowerCase();
+  }
+}
+
 function labelUrl(url: string): string {
   const lower = url.toLowerCase();
   if (lower.includes("linkedin.com")) return `LinkedIn: ${url}`;
@@ -96,19 +113,50 @@ function labelUrl(url: string): string {
   return url;
 }
 
+// All project-specific URLs across PROJECT_LINK_MAP — used to exclude them from
+// the personal Links section.
+function buildProjectUrlSet(): Set<string> {
+  const s = new Set<string>();
+  for (const entry of PROJECT_LINK_MAP) {
+    if (entry.liveDemo) s.add(normalizeUrl(entry.liveDemo));
+    if (entry.github)   s.add(normalizeUrl(entry.github));
+  }
+  return s;
+}
+
+const PROJECT_URL_SET: Set<string> = buildProjectUrlSet();
+
+function isProjectUrl(url: string): boolean {
+  return PROJECT_URL_SET.has(normalizeUrl(url));
+}
+
+// Extract only personal links (LinkedIn / GitHub profile) from the pre-section
+// header block. Excludes project-specific repos and live demo URLs.
 function extractPersonalLinksFromHeader(headerLines: string[]): string {
   const text = headerLines.join(" ");
   const rawUrls = text.match(URL_REGEX) ?? [];
   const cleaned = rawUrls.map((u) => u.replace(/[.,;)]+$/, ""));
-  const uniqueUrls = Array.from(new Set(cleaned));
+  const seen = new Set<string>();
+  const personalUrls: string[] = [];
 
-  const personalUrls = uniqueUrls.filter((url) => {
+  for (const url of cleaned) {
     const lower = url.toLowerCase();
-    return (
-      lower.includes("linkedin.com") ||
-      lower.includes("github.com")
-    );
-  });
+    const norm = normalizeUrl(url);
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+
+    const isLinkedIn = lower.includes("linkedin.com");
+    // GitHub profile = github.com/<user> with no further path segments beyond the username
+    const isGitHubProfile = lower.includes("github.com") && !isProjectUrl(url) &&
+      (() => {
+        try {
+          const parts = new URL(url).pathname.replace(/^\//, "").split("/").filter(Boolean);
+          return parts.length <= 1; // github.com/SantiNones is personal; /SantiNones/repo is project
+        } catch { return false; }
+      })();
+
+    if (isLinkedIn || isGitHubProfile) personalUrls.push(url);
+  }
 
   if (!personalUrls.length) return "";
   return personalUrls.map(labelUrl).join("\n");
@@ -133,25 +181,24 @@ function backfillProjectLinks(projectsText: string): string {
     );
     if (!meta) return block;
 
-    const blockLower = block.toLowerCase();
+    // Collect all normalised URLs already present in this block
+    const existingNorm = new Set<string>(
+      (block.match(URL_REGEX) ?? []).map((u) => normalizeUrl(u)),
+    );
+
     const lines = block.split("\n");
-    const insertAfter = 0;
     const toInsert: string[] = [];
 
-    if (meta.liveDemo && !blockLower.includes(meta.liveDemo.toLowerCase()) && !blockLower.includes("live demo") && !blockLower.includes("livedemo")) {
+    if (meta.liveDemo && !existingNorm.has(normalizeUrl(meta.liveDemo))) {
       toInsert.push(`Live Demo: ${meta.liveDemo}`);
     }
-    if (meta.github && !blockLower.includes(meta.github.toLowerCase()) && !blockLower.includes("github:")) {
+    if (meta.github && !existingNorm.has(normalizeUrl(meta.github))) {
       toInsert.push(`GitHub: ${meta.github}`);
     }
 
     if (!toInsert.length) return block;
 
-    return [
-      ...lines.slice(0, insertAfter + 1),
-      ...toInsert,
-      ...lines.slice(insertAfter + 1),
-    ].join("\n");
+    return [lines[0], ...toInsert, ...lines.slice(1)].join("\n");
   });
 
   return patched.join("\n\n");
@@ -161,8 +208,9 @@ function mergeLinksText(existing: string, incoming: string): string {
   if (!incoming) return existing;
   if (!existing) return incoming;
   const existingLines = existing.split("\n").map((l) => l.trim()).filter(Boolean);
+  const existingNorms = new Set(existingLines.map(normalizeUrl));
   const incomingLines = incoming.split("\n").map((l) => l.trim()).filter(Boolean);
-  const toAdd = incomingLines.filter((l) => !existingLines.some((e) => e.includes(l) || l.includes(e)));
+  const toAdd = incomingLines.filter((l) => !existingNorms.has(normalizeUrl(l)));
   if (!toAdd.length) return existing;
   return [...existingLines, ...toAdd].join("\n");
 }
