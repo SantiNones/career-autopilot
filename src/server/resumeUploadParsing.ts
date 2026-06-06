@@ -68,8 +68,17 @@ export async function extractFromFile(
   return { rawText, links };
 }
 
+function labelUrl(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes("linkedin.com")) return `LinkedIn: ${url}`;
+  if (lower.includes("github.com")) return `GitHub: ${url}`;
+  if (lower.includes("vercel.app") || lower.includes("render.com") || lower.includes("netlify.app")) return `Portfolio: ${url}`;
+  return url;
+}
+
 export function extractLinks(text: string): string[] {
   const matches = text.match(LINK_REGEX) ?? [];
-  const unique = Array.from(new Set(matches.map((u) => u.replace(/[.,;)]+$/, ""))));
-  return unique;
+  const cleaned = matches.map((u) => u.replace(/[.,;)]+$/, ""));
+  const unique = Array.from(new Set(cleaned));
+  return unique.map(labelUrl);
 }

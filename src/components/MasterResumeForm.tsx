@@ -44,13 +44,21 @@ function emptyState(): ResumeSections {
   };
 }
 
+function extractUrlFromLine(line: string): string {
+  const m = line.match(/https?:\/\/\S+/);
+  return m ? m[0].replace(/[.,;)]+$/, "") : line;
+}
+
 function mergeLinks(existing: string, newLinks: string[]): string {
   if (!newLinks.length) return existing;
   const existingLines = existing.split("\n").map((l) => l.trim()).filter(Boolean);
-  const toAdd = newLinks.filter((l) => !existingLines.includes(l));
+  const existingUrls = new Set(existingLines.map(extractUrlFromLine));
+  const toAdd = newLinks.filter((l) => {
+    const url = extractUrlFromLine(l);
+    return !existingUrls.has(url) && !existingLines.some((e) => e.includes(url) || url.includes(extractUrlFromLine(e)));
+  });
   if (!toAdd.length) return existing;
-  const combined = [...existingLines, ...toAdd];
-  return combined.join("\n");
+  return [...existingLines, ...toAdd].join("\n");
 }
 
 export function MasterResumeForm({ initial }: Props) {
@@ -103,7 +111,11 @@ export function MasterResumeForm({ initial }: Props) {
       const json = (await res.json()) as { parsed?: Omit<ResumeSections, "rawText">; error?: string };
       if (!res.ok) throw new Error(json.error ?? "Failed to parse");
       if (json.parsed) {
-        setData((prev) => ({ ...prev, ...json.parsed }));
+        setData((prev) => {
+          const parsed = json.parsed!;
+          const mergedLinks = mergeLinks(prev.links, (parsed.links ?? "").split("\n").map((l) => l.trim()).filter(Boolean));
+          return { ...prev, ...parsed, links: mergedLinks };
+        });
         setSaveMsg("Parsed — review sections below and save when ready.");
       }
     } catch (e) {
