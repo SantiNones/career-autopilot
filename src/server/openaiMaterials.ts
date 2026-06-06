@@ -852,6 +852,12 @@ CORE PHILOSOPHY:
 You do NOT match keywords. You build positioning.
 Every material should feel like it was written by a skilled recruiter who understands both the candidate and the role deeply.
 
+EXPERIENCE INTELLIGENCE RULE:
+- When EXPERIENCE INTELLIGENCE is provided, use it as supporting context to infer stronger positioning and richer phrasing.
+- Do NOT copy responsibility lists, skill lists, or keyword lists verbatim into materials.
+- Use insights to INFORM word choice, transferable skill framing, and achievement emphasis — not to paste content.
+- Never invent experience, technologies, or achievements beyond what is in the candidate data.
+
 STRICT RULES — follow all of them:
 - Use ONLY the candidate data provided. Never invent experience, employers, skills, projects, or dates.
 - Follow the POSITIONING STRATEGY provided in the NARRATIVE ANALYSIS section.
@@ -1001,6 +1007,15 @@ screeningAnswers format (plain text, Q&A):
   Q: Any questions for us?
   A: [2–3 thoughtful questions about the role, team, or company — informed by the PRIMARY HIRING SIGNALS]`;
 
+type ExperienceInsightEntry = {
+  company: string;
+  role: string;
+  responsibilities: string[];
+  skills: string[];
+  keywords: string[];
+  metrics: string[];
+};
+
 export async function generateOpenAiMaterials(args: {
   profile: Profile;
   preferences: Prefs | null;
@@ -1008,8 +1023,9 @@ export async function generateOpenAiMaterials(args: {
   job: Job;
   evaluation: Evaluation | null;
   fitAnalysis: FitAnalysisInput | null;
+  experienceInsights: ExperienceInsightEntry[] | null;
 }): Promise<GeneratedMaterials> {
-  const { profile, preferences, resume, job, evaluation, fitAnalysis } = args;
+  const { profile, preferences, resume, job, evaluation, fitAnalysis, experienceInsights } = args;
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model = process.env.OPENAI_MODEL ?? "gpt-4o";
@@ -1139,10 +1155,38 @@ export async function generateOpenAiMaterials(args: {
 
   const narrativeBlock = narrativeLines.join("\n");
 
+  // ── Experience Intelligence block ──────────────────────────────────────────
+  const insightBlock = (() => {
+    if (!experienceInsights || experienceInsights.length === 0) return "";
+    const lines: string[] = [];
+    for (const entry of experienceInsights) {
+      lines.push(`Company: ${entry.company}`);
+      lines.push(`Role: ${entry.role}`);
+      if (entry.responsibilities.length) {
+        lines.push("Responsibilities:");
+        entry.responsibilities.forEach((r) => lines.push(`- ${r}`));
+      }
+      if (entry.skills.length) {
+        lines.push("Transferable Skills:");
+        entry.skills.forEach((s) => lines.push(`- ${s}`));
+      }
+      if (entry.keywords.length) {
+        lines.push(`Keywords: ${entry.keywords.join(", ")}`);
+      }
+      if (entry.metrics.length) {
+        lines.push("Metrics:");
+        entry.metrics.forEach((m) => lines.push(`- ${m}`));
+      }
+      lines.push("");
+    }
+    return lines.join("\n").trim();
+  })();
+
   // ── Assemble user message ────────────────────────────────────────────────────
   const userContent = [
     "## CANDIDATE PROFILE",
     candidateBlock,
+    ...(insightBlock ? ["", "## EXPERIENCE INTELLIGENCE", "Use as supporting context. Do not copy verbatim.", insightBlock] : []),
     "",
     "## MASTER RESUME",
     resumeBlock,

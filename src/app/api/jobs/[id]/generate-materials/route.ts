@@ -40,7 +40,10 @@ export async function POST(
         include: { preferences: true },
         orderBy: { createdAt: "asc" },
       }),
-      prisma.resumeMaster.findFirst({ orderBy: { createdAt: "asc" } }),
+      prisma.resumeMaster.findFirst({
+        orderBy: { createdAt: "asc" },
+        include: { experienceInsight: true },
+      }),
       prisma.fitAnalysis.findUnique({ where: { jobPostingId: id } }),
     ]);
 
@@ -82,6 +85,9 @@ export async function POST(
     // produce usable materials from the template generator so the user is never blocked.
     if (hasOpenAiKey) {
       try {
+        const rawInsights = resume?.experienceInsight?.insights;
+        const experienceInsights = Array.isArray(rawInsights) ? rawInsights as Parameters<typeof generateOpenAiMaterials>[0]["experienceInsights"] : null;
+
         generated = await generateOpenAiMaterials({
           profile: profileArg,
           preferences: prefs,
@@ -89,6 +95,7 @@ export async function POST(
           job,
           evaluation: ev,
           fitAnalysis,
+          experienceInsights,
         });
         generatedBy = "openai";
       } catch (aiErr) {
