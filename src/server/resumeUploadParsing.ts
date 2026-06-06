@@ -37,6 +37,7 @@ export async function extractFromFile(
   }
 
   let rawText = "";
+  const embeddedHrefs: string[] = [];
 
   if (isPdf) {
     try {
@@ -48,8 +49,12 @@ export async function extractFromFile(
     }
   } else {
     try {
-      const result = await mammoth.extractRawText({ buffer });
-      rawText = result.value ?? "";
+      const [textResult, htmlResult] = await Promise.all([
+        mammoth.extractRawText({ buffer }),
+        mammoth.convertToHtml({ buffer }),
+      ]);
+      rawText = textResult.value ?? "";
+      embeddedHrefs.push(...extractHrefsFromHtml(htmlResult.value ?? ""));
     } catch {
       throw new Error("Could not extract text from this DOCX file.");
     }
@@ -63,7 +68,7 @@ export async function extractFromFile(
     );
   }
 
-  const links = extractLinks(rawText);
+  const links = extractLinks(rawText, embeddedHrefs);
 
   return { rawText, links };
 }
@@ -119,12 +124,24 @@ function isPersonalUrl(url: string): boolean {
   return false;
 }
 
-export function extractLinks(text: string): string[] {
-  const matches = text.match(LINK_REGEX) ?? [];
-  const cleaned = matches.map((u) => u.replace(/[.,;)]+$/, ""));
+// Extract href attribute values from HTML anchor tags produced by mammoth.
+function extractHrefsFromHtml(html: string): string[] {
+  const hrefs: string[] = [];
+  const HREF_RE = /href="([^"]+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = HREF_RE.exec(html)) !== null) {
+    const href = m[1].trim();
+    if (href.startsWith("http")) hrefs.push(href);
+  }
+  return hrefs;
+}
+
+export function extractLinks(text: string, extraUrls: string[] = []): string[] {
+  const fromText = (text.match(LINK_REGEX) ?? []).map((u) => u.replace(/[.,;)]+$/, ""));
+  const allUrls = [...fromText, ...extraUrls];
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const url of cleaned) {
+  for (const url of allUrls) {
     const norm = normalizeUrl(url);
     if (seen.has(norm)) continue;
     seen.add(norm);

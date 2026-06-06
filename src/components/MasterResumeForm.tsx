@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ResumeSections = {
   rawText: string;
@@ -70,12 +70,15 @@ export function MasterResumeForm({ initial }: Props) {
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setMounted(true); }, []);
 
   function updateField(key: keyof ResumeSections, value: string) {
     setData((prev) => ({ ...prev, [key]: value }));
@@ -302,35 +305,37 @@ export function MasterResumeForm({ initial }: Props) {
           >
             {saving ? "Saving…" : "Save Resume"}
           </button>
-          {!confirmClear ? (
-            <button
-              type="button"
-              onClick={() => setConfirmClear(true)}
-              disabled={clearing}
-              className="ml-auto rounded-lg border border-rose-300 bg-white px-4 py-2 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-400 hover:bg-rose-50 disabled:opacity-50"
-            >
-              Clear Resume
-            </button>
-          ) : (
-            <span className="ml-auto flex items-center gap-2">
-              <span className="text-xs text-zinc-500">Are you sure? This cannot be undone.</span>
+          {mounted && (
+            !confirmClear ? (
               <button
                 type="button"
-                onClick={() => void handleClearResume()}
+                onClick={() => setConfirmClear(true)}
                 disabled={clearing}
-                className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+                className="ml-auto rounded-lg border border-rose-300 bg-white px-4 py-2 text-xs font-semibold text-rose-600 transition-colors hover:border-rose-400 hover:bg-rose-50 disabled:opacity-50"
               >
-                {clearing ? "Clearing…" : "Yes, clear"}
+                Clear Resume
               </button>
-              <button
-                type="button"
-                onClick={() => setConfirmClear(false)}
-                disabled={clearing}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </span>
+            ) : (
+              <span className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-zinc-500">Are you sure? This cannot be undone.</span>
+                <button
+                  type="button"
+                  onClick={() => void handleClearResume()}
+                  disabled={clearing}
+                  className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {clearing ? "Clearing…" : "Yes, clear"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(false)}
+                  disabled={clearing}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </span>
+            )
           )}
         </div>
       </div>
