@@ -4,6 +4,11 @@ type Profile = {
   fullName: string | null;
   headline: string | null;
   location: string | null;
+  phone: string | null;
+  email: string | null;
+  linkedinUrl: string | null;
+  githubUrl: string | null;
+  portfolioUrl: string | null;
   languages: unknown;
 };
 
@@ -906,8 +911,10 @@ tailoredCv, coverLetter, recruiterMessage, screeningAnswers.
 ────────────────────────────────────────
 tailoredCv format (STRICT max 400 words, plain text):
   [Full name]
-  [Single headline] · [Location] · [Languages if any]
-  [Links if any]
+  [Single headline — TARGET TITLE exactly]
+
+  [Location] · [Phone] · [Email]   (omit any field not provided; no dangling " · ")
+  [Links — one per line, e.g. LinkedIn: <url> / GitHub: <url> / Portfolio: <url>]  (omit if none)
 
   SUMMARY
   2 sentences. Use the positioning strategy. Be specific about what value the candidate brings to this role.
@@ -936,6 +943,18 @@ tailoredCv format (STRICT max 400 words, plain text):
 
   EDUCATION
   Degree, Institution, Year (one line)
+
+  LANGUAGES
+  Only include if languages are provided in CANDIDATE PROFILE. One line, pipe-separated.
+  Format: Language1 (Level) | Language2 (Level)
+  Omit this section entirely if no languages are provided.
+
+HEADER RULES (CRITICAL):
+- Do NOT put languages in the header line. Languages go in the LANGUAGES section near the end.
+- Do NOT put phone or email in the header line. They go on the contact line below the headline.
+- The header is exactly 2 lines: name on line 1, TARGET TITLE on line 2.
+- The contact line (location · phone · email) is a separate third line.
+- Omit any contact field that is "Not provided".
 
 ────────────────────────────────────────
 coverLetter format (STRICT max 200 words, plain text):
@@ -996,14 +1015,25 @@ export async function generateOpenAiMaterials(args: {
   const model = process.env.OPENAI_MODEL ?? "gpt-4o";
 
   // ── Candidate block ──────────────────────────────────────────────────────────
+  // Build structured links from profile fields; fall back to resume.links only if none set
+  const structuredLinks: string[] = [];
+  if (profile.linkedinUrl?.trim()) structuredLinks.push(`LinkedIn: ${profile.linkedinUrl.trim()}`);
+  if (profile.githubUrl?.trim())   structuredLinks.push(`GitHub: ${profile.githubUrl.trim()}`);
+  if (profile.portfolioUrl?.trim()) structuredLinks.push(`Portfolio: ${profile.portfolioUrl.trim()}`);
+  if (!structuredLinks.length && resume?.links?.trim()) {
+    resume.links.trim().split("\n").filter(Boolean).forEach((l) => structuredLinks.push(l));
+  }
+
   const candidateLines = [
     `Name: ${profile.fullName ?? "Not provided"}`,
     `Headline: ${profile.headline ?? "Not provided"}`,
     `Location: ${profile.location ?? "Not provided"}`,
+    profile.phone?.trim()  ? `Phone: ${profile.phone.trim()}`   : "",
+    profile.email?.trim()  ? `Email: ${profile.email.trim()}`   : "",
+    structuredLinks.length ? `Links:\n${structuredLinks.join("\n")}` : "",
     `Languages: ${str(profile.languages) || "Not provided"}`,
     preferences?.targetTitles ? `Target titles: ${str(preferences.targetTitles)}` : "",
     preferences?.targetSeniority ? `Target seniority: ${preferences.targetSeniority}` : "",
-    resume?.links ? `Links:\n${resume.links}` : "",
   ].filter(Boolean);
 
   const candidateBlock = candidateLines.join("\n");
