@@ -171,26 +171,56 @@ function extractNormedUrls(text: string): Set<string> {
   return new Set(matches.map(normalizeUrl));
 }
 
-// True if a line is purely a link-label line (e.g. "GitHub: url", "Live Demo: url | GitHub: url").
+// Assign a canonical label to a bare URL.
+function canonicalLabel(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes("github.com")) return "GitHub";
+  if (
+    lower.includes("vercel.app") ||
+    lower.includes("render.com") ||
+    lower.includes("onrender.com") ||
+    lower.includes("netlify.app")
+  ) return "Live Demo";
+  return "Link";
+}
+
+// True if a line contains nothing but URLs, known labels, pipes and whitespace.
 function isLinkLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
-  // Strip all URLs, then strip known label prefixes and pipe separators
-  const withoutLinks = trimmed
+  const stripped = trimmed
     .replace(URL_REGEX_FRESH(), "")
-    .replace(/\|\s*/g, "")
-    .replace(/^(live demo|github|linkedin|portfolio|demo)\s*:\s*/gi, "")
+    .replace(/\|\s*-?\s*/g, "")
+    .replace(/\b(live demo|github|linkedin|portfolio|demo|link)\s*:\s*/gi, "")
+    .replace(/[:\s-]+/g, "")
     .trim();
-  // If nothing meaningful remains, it is purely a link line
-  return withoutLinks.length === 0;
+  return stripped.length === 0;
 }
 
-// Deduplicate link lines inside a single project block.
-// Strategy:
-//   - Track every normalized URL we have "accepted" so far (per block).
-//   - For each line, if it is a link line AND all its URLs are already accepted → drop it.
-//   - Otherwise, accept it (and record its URLs as accepted).
-// This eliminates exact duplicates AND combined lines whose individual URLs were already emitted.
+// Split a combined link line ("Live Demo: url | GitHub: url") into separate
+// canonical lines ("Live Demo: url\nGitHub: url").
+// Non-link lines are returned as-is.
+function canonicalizeLinkLine(line: string): string[] {
+  if (!isLinkLine(line)) return [line];
+  const urls = line.match(URL_REGEX_FRESH()) ?? [];
+  if (urls.length === 0) return [line];
+  return urls.map((u) => {
+    const clean = u.replace(/[.,;)]+$/, "");
+    return `${canonicalLabel(clean)}: ${clean}`;
+  });
+}
+
+// Phase 1 — canonicalize every line in a block (split combined link lines).
+function canonicalizeBlock(block: string): string {
+  return block
+    .split("\n")
+    .flatMap(canonicalizeLinkLine)
+    .join("\n");
+}
+
+// Phase 2 — drop duplicate canonical link lines.
+// A line is dropped only if it is a link line AND every URL it mentions
+// has already been accepted by an earlier line in this block.
 function deduplicateProjectBlock(block: string): string {
   const lines = block.split("\n");
   const acceptedUrls = new Set<string>();
@@ -206,10 +236,8 @@ function deduplicateProjectBlock(block: string): string {
       kept.push(line);
       continue;
     }
-    // Drop this line only if every URL it contains was already accepted
-    const allAlreadySeen = [...lineUrls].every((u) => acceptedUrls.has(u));
-    if (allAlreadySeen) continue;
-    // Accept this line — record its URLs
+    const allSeen = [...lineUrls].every((u) => acceptedUrls.has(u));
+    if (allSeen) continue;
     for (const u of lineUrls) acceptedUrls.add(u);
     kept.push(line);
   }
@@ -223,8 +251,11 @@ function backfillProjectLinks(projectsText: string): string {
   const blocks = projectsText.split(/\n{2,}/);
 
   const patched = blocks.map((block) => {
-    // Phase 1: remove duplicate link lines within the block
-    const deduped = deduplicateProjectBlock(block);
+    // Phase 1: canonicalize combined link lines into separate lines
+    const canonical = canonicalizeBlock(block);
+
+    // Phase 2: drop duplicate link lines
+    const deduped = deduplicateProjectBlock(canonical);
 
     const firstLine = deduped.split("\n")[0].toLowerCase();
     const meta = PROJECT_LINK_MAP.find((entry) =>
@@ -238,7 +269,7 @@ function backfillProjectLinks(projectsText: string): string {
     );
     if (!meta) return deduped;
 
-    // Phase 2: inject only URLs still missing after dedup
+    // Phase 3: inject only URLs still absent after canonicalize+dedup
     const existingNorm = extractNormedUrls(deduped);
     const dedupedLines = deduped.split("\n");
     const toInsert: string[] = [];
@@ -251,7 +282,6 @@ function backfillProjectLinks(projectsText: string): string {
     }
 
     if (!toInsert.length) return deduped;
-
     return [dedupedLines[0], ...toInsert, ...dedupedLines.slice(1)].join("\n");
   });
 
