@@ -3,29 +3,55 @@ import OpenAI from "openai";
 import { prisma } from "@/lib/db";
 import type { ExperienceInsightEntry } from "../route";
 
-const SYSTEM_PROMPT = `You are an expert career analyst. Your task is to analyze a candidate's work experience section and extract structured insights.
 
-Rules:
-- Infer responsibilities from what is described
-- Infer transferable skills from the type of work performed
-- Extract keywords relevant to the roles
-- Extract metrics ONLY if explicitly mentioned — do not invent numbers
-- Do NOT invent achievements, technologies, certifications, or responsibilities not supported by the text
-- Be conservative and factual
-- If experience is sparse, infer minimally and honestly
+const SYSTEM_PROMPT = `You are a senior career strategist. Your task is to analyze a candidate's work experience and produce structured professional intelligence that can later be used to generate stronger CVs, cover letters, and recruiter messages.
 
-Output format: Return ONLY a valid JSON array. No markdown, no explanation, no code blocks.
+CORE MISSION:
+Translate domain-specific work into transferable professional value. Think like a recruiter reading between the lines. Go beyond surface-level job descriptions to identify the underlying professional competencies that make someone hireable in multiple contexts.
 
-Each element must have exactly these keys:
-- company (string)
-- role (string — infer from context if not explicit, e.g. "Content Moderator" from the tasks described)
-- responsibilities (string array — concise, max 5)
-- skills (string array — transferable, max 6)
-- keywords (string array — industry/role relevant, max 8)
-- metrics (string array — only if mentioned, can be empty array)`;
+STRICT RULES:
+- Infer only from what is described. Do NOT invent achievements, technologies, certifications, or experience not supported by the text.
+- Extract metrics ONLY if explicitly mentioned. Do not fabricate numbers.
+- If experience is sparse, infer minimally and honestly.
+- Think about what this work SIGNALS about the person, not just what they literally did.
+
+FIELD DEFINITIONS:
+
+responsibilities: What they literally did in the role. Concise, factual. Max 5.
+
+skills: Transferable skills demonstrated by the work. Not job-specific jargon — broader competencies that travel across roles. Max 6.
+
+keywords: Industry and role-relevant terms for ATS and recruiter scanning. Max 8.
+
+metrics: Only if explicitly mentioned in the text. Empty array if none.
+
+transferableNarratives: Short statements describing what this role SIGNALS about the candidate as a professional. Frame as competency demonstrations, not task descriptions. Think: what would a recruiter say about this person based on this experience? Max 6 statements.
+  Examples:
+  - "Made high-stakes decisions under ambiguity"
+  - "Maintained quality under strict performance targets"
+  - "Adapted communication style to different audiences"
+  - "Handled objections and stakeholder concerns professionally"
+  - "Worked effectively in KPI-driven environments"
+
+workEnvironment: Describe the operating environment this person has experience in. These help match the candidate to new contexts. Max 4.
+  Examples:
+  - "High-volume operational workflows"
+  - "Policy-driven decision making"
+  - "Public-facing communication"
+  - "Team-based collaborative environment"
+
+professionalThemes: Higher-level professional concepts this role demonstrates. Single words or short phrases. These are the meta-competencies. Max 5.
+  Examples:
+  - "Decision making"
+  - "Quality assurance"
+  - "Communication"
+  - "Adaptability"
+  - "Coordination"
+
+Output format: Return ONLY valid JSON. No markdown, no explanation, no code blocks.`;
 
 function buildUserMessage(experienceText: string): string {
-  return `Analyze the following work experience section and return structured JSON insights:\n\n${experienceText}`;
+  return `Analyze the following work experience section and return structured professional intelligence:\n\n${experienceText}`;
 }
 
 function parseInsights(raw: string): ExperienceInsightEntry[] {
@@ -75,14 +101,17 @@ export async function POST() {
           items: {
             type: "object",
             properties: {
-              company:          { type: "string" },
-              role:             { type: "string" },
-              responsibilities: { type: "array", items: { type: "string" } },
-              skills:           { type: "array", items: { type: "string" } },
-              keywords:         { type: "array", items: { type: "string" } },
-              metrics:          { type: "array", items: { type: "string" } },
+              company:                { type: "string" },
+              role:                   { type: "string" },
+              responsibilities:       { type: "array", items: { type: "string" } },
+              skills:                 { type: "array", items: { type: "string" } },
+              keywords:               { type: "array", items: { type: "string" } },
+              metrics:                { type: "array", items: { type: "string" } },
+              transferableNarratives: { type: "array", items: { type: "string" } },
+              workEnvironment:        { type: "array", items: { type: "string" } },
+              professionalThemes:     { type: "array", items: { type: "string" } },
             },
-            required: ["company", "role", "responsibilities", "skills", "keywords", "metrics"],
+            required: ["company", "role", "responsibilities", "skills", "keywords", "metrics", "transferableNarratives", "workEnvironment", "professionalThemes"],
             additionalProperties: false,
           },
         },
@@ -106,7 +135,7 @@ export async function POST() {
             strict: true,
           },
         },
-        max_output_tokens: 4000,
+        max_output_tokens: 6000,
       });
       // Responses API returns { insights: [...] } due to the wrapper schema
       const parsed = JSON.parse(resp.output_text ?? "{}") as { insights?: unknown };
@@ -119,7 +148,7 @@ export async function POST() {
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent },
         ],
-        max_tokens: 2000,
+        max_tokens: 3000,
         temperature: 0.2,
       });
       raw = resp.choices[0]?.message?.content ?? "[]";

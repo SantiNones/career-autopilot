@@ -9,6 +9,9 @@ type InsightEntry = {
   skills: string[];
   keywords: string[];
   metrics: string[];
+  transferableNarratives: string[];
+  workEnvironment: string[];
+  professionalThemes: string[];
 };
 
 type ApiResponse = {
@@ -46,7 +49,10 @@ function InsightCard({ entry }: { entry: InsightEntry }) {
     entry.responsibilities.length > 0 ||
     entry.skills.length > 0 ||
     entry.keywords.length > 0 ||
-    entry.metrics.length > 0;
+    entry.metrics.length > 0 ||
+    (entry.transferableNarratives?.length ?? 0) > 0 ||
+    (entry.workEnvironment?.length ?? 0) > 0 ||
+    (entry.professionalThemes?.length ?? 0) > 0;
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
@@ -115,6 +121,48 @@ function InsightCard({ entry }: { entry: InsightEntry }) {
               <div className="flex flex-wrap gap-1.5">
                 {entry.metrics.map((m, i) => (
                   <Pill key={i} text={m} color="bg-emerald-50 text-emerald-700" />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(entry.transferableNarratives?.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                Transferable Narratives
+              </p>
+              <ul className="flex flex-col gap-1">
+                {entry.transferableNarratives.map((n, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-zinc-700">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" />
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(entry.workEnvironment?.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                Work Environment
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {entry.workEnvironment.map((w, i) => (
+                  <Pill key={i} text={w} color="bg-sky-50 text-sky-700" />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(entry.professionalThemes?.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                Professional Themes
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {entry.professionalThemes.map((t, i) => (
+                  <Pill key={i} text={t} color="bg-violet-50 text-violet-700" />
                 ))}
               </div>
             </div>

@@ -1014,6 +1014,9 @@ type ExperienceInsightEntry = {
   skills: string[];
   keywords: string[];
   metrics: string[];
+  transferableNarratives?: string[];
+  workEnvironment?: string[];
+  professionalThemes?: string[];
 };
 
 export async function generateOpenAiMaterials(args: {
@@ -1162,13 +1165,19 @@ export async function generateOpenAiMaterials(args: {
     for (const entry of experienceInsights) {
       lines.push(`Company: ${entry.company}`);
       lines.push(`Role: ${entry.role}`);
-      if (entry.responsibilities.length) {
-        lines.push("Responsibilities:");
-        entry.responsibilities.forEach((r) => lines.push(`- ${r}`));
+      if (entry.transferableNarratives?.length) {
+        lines.push("Transferable Narratives:");
+        entry.transferableNarratives.forEach((n) => lines.push(`- ${n}`));
+      }
+      if (entry.workEnvironment?.length) {
+        lines.push("Work Environment:");
+        entry.workEnvironment.forEach((w) => lines.push(`- ${w}`));
+      }
+      if (entry.professionalThemes?.length) {
+        lines.push(`Professional Themes: ${entry.professionalThemes.join(", ")}`);
       }
       if (entry.skills.length) {
-        lines.push("Transferable Skills:");
-        entry.skills.forEach((s) => lines.push(`- ${s}`));
+        lines.push(`Transferable Skills: ${entry.skills.join(", ")}`);
       }
       if (entry.keywords.length) {
         lines.push(`Keywords: ${entry.keywords.join(", ")}`);

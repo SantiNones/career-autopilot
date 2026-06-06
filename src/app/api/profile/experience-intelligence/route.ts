@@ -8,6 +8,9 @@ export type ExperienceInsightEntry = {
   skills: string[];
   keywords: string[];
   metrics: string[];
+  transferableNarratives: string[];
+  workEnvironment: string[];
+  professionalThemes: string[];
 };
 
 export async function GET() {
