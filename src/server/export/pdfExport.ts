@@ -102,7 +102,10 @@ export async function generatePdfFromText(content: string): Promise<Buffer> {
         items.push({ text: "", size: 0, bold: false, italic: false, indent: 0, color: [0.8, 0.8, 0.8], lineHeight: 10, spaceBefore: 6, spaceAfter: 8, drawRule: true });
         break;
       case "section-heading":
-        items.push({ text: t, size: SIZE_HEADING, bold: true, italic: false, indent: 0, color: [0.1, 0.1, 0.1], lineHeight: LH_HEADING, spaceBefore: 12, spaceAfter: 3, drawRule: true });
+        // Text item first — no drawRule so the text actually gets drawn
+        items.push({ text: t, size: SIZE_HEADING, bold: true, italic: false, indent: 0, color: [0.1, 0.1, 0.1], lineHeight: LH_HEADING, spaceBefore: 12, spaceAfter: 2 });
+        // Then a separate rule-only item below the text
+        items.push({ text: "", size: 0, bold: false, italic: false, indent: 0, color: [0.8, 0.8, 0.8], lineHeight: 0, spaceBefore: 0, spaceAfter: 4, drawRule: true });
         break;
       case "project-title":
         items.push({ text: t, size: SIZE_PROJ, bold: true, italic: false, indent: 0, color: [0.1, 0.1, 0.1], lineHeight: LH_PROJ, spaceBefore: 8, spaceAfter: 1 });
