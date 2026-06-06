@@ -35,8 +35,12 @@ function parseInsights(raw: string): ExperienceInsightEntry[] {
     .replace(/\s*```$/i, "")
     .trim();
   const parsed = JSON.parse(cleaned) as unknown;
-  if (!Array.isArray(parsed)) throw new Error("Expected a JSON array");
-  return parsed as ExperienceInsightEntry[];
+  // Accept bare array or { insights: [...] } wrapper from json_object mode
+  if (Array.isArray(parsed)) return parsed as ExperienceInsightEntry[];
+  if (parsed && typeof parsed === "object" && Array.isArray((parsed as Record<string, unknown>).insights)) {
+    return (parsed as { insights: ExperienceInsightEntry[] }).insights;
+  }
+  throw new Error("Expected a JSON array");
 }
 
 export async function POST() {
@@ -56,18 +60,72 @@ export async function POST() {
 
     const client = new OpenAI({ apiKey });
     const model = process.env.OPENAI_MODEL ?? "gpt-4o";
+    const userContent = buildUserMessage(resume.experience);
 
-    const response = await client.chat.completions.create({
-      model,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserMessage(resume.experience) },
-      ],
-    });
+    // GPT-5 / o-series: Responses API (no temperature, json_schema strict mode)
+    // Older models: Chat Completions with json_object + temperature
+    const isGpt5 = model.startsWith("gpt-5") || model.startsWith("o");
 
-    const raw = response.choices[0]?.message?.content ?? "";
-    if (!raw.trim()) {
+    // Structured Outputs requires root type to be "object", not "array"
+    const INSIGHT_SCHEMA = {
+      type: "object",
+      properties: {
+        insights: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              company:          { type: "string" },
+              role:             { type: "string" },
+              responsibilities: { type: "array", items: { type: "string" } },
+              skills:           { type: "array", items: { type: "string" } },
+              keywords:         { type: "array", items: { type: "string" } },
+              metrics:          { type: "array", items: { type: "string" } },
+            },
+            required: ["company", "role", "responsibilities", "skills", "keywords", "metrics"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["insights"],
+      additionalProperties: false,
+    };
+
+    let raw: string;
+
+    if (isGpt5) {
+      const resp = await client.responses.create({
+        model,
+        instructions: SYSTEM_PROMPT,
+        input: userContent,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "experience_insights",
+            schema: INSIGHT_SCHEMA,
+            strict: true,
+          },
+        },
+        max_output_tokens: 4000,
+      });
+      // Responses API returns { insights: [...] } due to the wrapper schema
+      const parsed = JSON.parse(resp.output_text ?? "{}") as { insights?: unknown };
+      raw = JSON.stringify(parsed.insights ?? []);
+    } else {
+      const resp = await client.chat.completions.create({
+        model,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userContent },
+        ],
+        max_tokens: 2000,
+        temperature: 0.2,
+      });
+      raw = resp.choices[0]?.message?.content ?? "[]";
+    }
+
+    if (!raw.trim() || (raw.trim() === "[]" && !raw.includes("company"))) {
       return NextResponse.json({ error: "OpenAI returned an empty response" }, { status: 502 });
     }
 
