@@ -90,14 +90,15 @@ export function PositioningStrategyCard({
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
-      {/* Header */}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-zinc-50"
-        aria-expanded={open}
-      >
-        <div className="flex items-center gap-3">
+      {/* Header - separate controls to avoid nested buttons */}
+      <div className="flex items-center justify-between px-5 py-4">
+        {/* Collapsible trigger */}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex flex-1 items-center gap-3 text-left transition-colors hover:bg-zinc-50 -ml-2 rounded-lg px-2 py-1"
+          aria-expanded={open}
+        >
           <div>
             <p className="text-sm font-semibold text-zinc-900">Positioning Strategy</p>
             {analyzedAt && (
@@ -112,24 +113,30 @@ export function PositioningStrategyCard({
             )}
           </div>
           {profile && <ScoreBadge score={profile.confidence} />}
-        </div>
+        </button>
+
+        {/* Actions - separate from collapse control */}
         <div className="flex items-center gap-2">
           {hasProfile && (
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAnalyze?.();
-              }}
+              onClick={() => onAnalyze?.()}
               disabled={isAnalyzing}
               className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
             >
               {isAnalyzing ? "Analyzing…" : "Re-analyze"}
             </button>
           )}
-          <ChevronIcon open={open} />
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="p-1 rounded-md hover:bg-zinc-100 transition-colors"
+            aria-label={open ? "Collapse" : "Expand"}
+          >
+            <ChevronIcon open={open} />
+          </button>
         </div>
-      </button>
+      </div>
 
       {/* Content */}
       {open && (
