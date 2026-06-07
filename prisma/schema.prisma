@@ -104,6 +104,7 @@ model JobPosting {
   applications Application[]
   materials    JobMaterial[]
   fitAnalysis  FitAnalysis?
+  positioningProfile PositioningProfile?
 }
 
 model JobEvaluation {
@@ -260,4 +261,15 @@ model AutomationLog {
   level   String
   message String
   data    Json?
+}
+
+model PositioningProfile {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobPostingId String     @unique
+  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+
+  profile Json
 }

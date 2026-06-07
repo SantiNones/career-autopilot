@@ -4,9 +4,11 @@ import { prisma } from "@/lib/db";
 import { DeleteJobButton } from "@/components/DeleteJobButton";
 import { EditJobDetailsForm } from "@/components/EditJobDetailsForm";
 import { MaterialsSection } from "@/components/MaterialsSection";
+import { PositioningStrategySection } from "@/components/PositioningStrategySection";
 import { StatusControls, StatusBadge } from "@/components/StatusControls";
 import { UpdateDescriptionForm } from "@/components/UpdateDescriptionForm";
 import type { AppStatus } from "@/components/StatusControls";
+import type { PositioningProfile } from "@/app/api/jobs/[id]/positioning/analyze/route";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +89,7 @@ export default async function JobDetailPage(props: {
         evaluations: { orderBy: { createdAt: "desc" }, take: 1 },
         materials: { orderBy: { createdAt: "desc" } },
         fitAnalysis: true,
+        positioningProfile: true,
       },
     }),
     prisma.userProfile.findFirst({ select: { fullName: true } }),
@@ -386,6 +389,13 @@ export default async function JobDetailPage(props: {
             </div>
           </div>
         </div>
+
+        {/* Positioning Strategy */}
+        <PositioningStrategySection
+          jobId={job.id}
+          initialProfile={job.positioningProfile?.profile as unknown as PositioningProfile | null}
+          initialAnalyzedAt={job.positioningProfile?.updatedAt?.toISOString() ?? null}
+        />
 
         {/* Actions */}
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
