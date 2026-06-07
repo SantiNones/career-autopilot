@@ -1,8 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import type { PositioningProfile } from "@/app/api/jobs/[id]/positioning/analyze/route";
+
+// ─── Staged Loading Messages ────────────────────────────────────────────────
+
+const LOADING_STAGES = [
+  "Analyzing role requirements...",
+  "Identifying strongest narrative...",
+  "Evaluating risks and gaps...",
+  "Building positioning strategy...",
+  "Finalizing recommendations...",
+];
+
+function useLoadingStage(isAnalyzing: boolean) {
+  const [stage, setStage] = useState(0);
+
+  useEffect(() => {
+    if (!isAnalyzing) {
+      setStage(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setStage((s) => (s < LOADING_STAGES.length - 1 ? s + 1 : s));
+    }, 4000); // Change stage every 4 seconds
+
+    return () => clearInterval(interval);
+  }, [isAnalyzing]);
+
+  return LOADING_STAGES[stage];
+}
+
+// ─── UI Components ──────────────────────────────────────────────────────────
 
 function ChevronIcon({ open }: { open: boolean }) {
   return (
@@ -25,7 +56,7 @@ function Section({
 }: {
   title: string;
   children: React.ReactNode;
-  color?: "green" | "blue" | "indigo" | "amber" | "orange" | "purple" | "cyan" | "neutral" | "zinc";
+  color?: "green" | "blue" | "indigo" | "amber" | "orange" | "purple" | "cyan" | "neutral" | "zinc" | "red";
 }) {
   const colorStyles: Record<string, string> = {
     green: "bg-emerald-50 text-emerald-800 border-emerald-200",
@@ -35,6 +66,7 @@ function Section({
     orange: "bg-orange-50 text-orange-800 border-orange-200",
     purple: "bg-violet-50 text-violet-800 border-violet-200",
     cyan: "bg-cyan-50 text-cyan-800 border-cyan-200",
+    red: "bg-rose-50 text-rose-800 border-rose-200",
     neutral: "bg-zinc-100 text-zinc-700 border-zinc-200",
     zinc: "bg-white text-zinc-700 border-zinc-200",
   };
@@ -58,6 +90,22 @@ function BulletList({ items }: { items: string[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function NumberedList({ items }: { items: string[] }) {
+  if (!items.length) return <p className="text-xs text-zinc-400">None identified.</p>;
+  return (
+    <ol className="flex flex-col gap-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex items-start gap-3">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+            {i + 1}
+          </span>
+          <span className="font-medium">{item}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -85,14 +133,14 @@ export function PositioningStrategyCard({
   isAnalyzing?: boolean;
 }) {
   const [open, setOpen] = useState(true);
+  const loadingStage = useLoadingStage(isAnalyzing ?? false);
 
   const hasProfile = profile !== null;
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
-      {/* Header - separate controls to avoid nested buttons */}
+      {/* Header */}
       <div className="flex items-center justify-between px-5 py-4">
-        {/* Collapsible trigger */}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -115,7 +163,6 @@ export function PositioningStrategyCard({
           {profile && <ScoreBadge score={profile.confidence} />}
         </button>
 
-        {/* Actions - separate from collapse control */}
         <div className="flex items-center gap-2">
           {hasProfile && (
             <button
@@ -154,12 +201,15 @@ export function PositioningStrategyCard({
                 className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
               >
                 {isAnalyzing ? (
-                  <span className="flex items-center justify-center gap-1.5">
-                    <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    Analyzing…
+                  <span className="flex flex-col items-center gap-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      Analyzing…
+                    </span>
+                    <span className="text-[10px] font-normal opacity-80">{loadingStage}</span>
                   </span>
                 ) : (
                   "Analyze Positioning"
@@ -170,63 +220,64 @@ export function PositioningStrategyCard({
 
           {profile && (
             <div className="flex flex-col gap-4">
-              {/* Title & Narrative */}
-              <div className="flex flex-col gap-3">
-                <Section title="Recommended Title" color="purple">
-                  <p className="font-medium">{profile.recommendedTitle}</p>
+              {/* ─── EXECUTIVE SUMMARY (Most Visible) ─── */}
+              <div className="rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-200 p-5">
+                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-indigo-700">Executive Summary</p>
+
+                {/* Recommended Position */}
+                <div className="mb-4">
+                  <p className="text-xs text-indigo-600 mb-1">Recommended Position</p>
+                  <p className="text-lg font-bold text-indigo-900">{profile.recommendedTitle}</p>
+                </div>
+
+                {/* Recruiter Hook */}
+                <div className="mb-4">
+                  <p className="text-xs text-indigo-600 mb-1">Recruiter Hook</p>
+                  <p className="text-sm font-medium text-indigo-900 leading-relaxed">{profile.recruiterHook}</p>
+                </div>
+
+                {/* Lead With */}
+                <div>
+                  <p className="text-xs text-indigo-600 mb-2">Lead With</p>
+                  <NumberedList items={profile.leadWith} />
+                </div>
+              </div>
+
+              {/* ─── RISK & RESPONSE (Actionable) ─── */}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Section title="Biggest Risk" color="red">
+                  <p className="font-medium text-rose-700">{profile.biggestRisk}</p>
                 </Section>
 
-                <Section title="Primary Narrative" color="purple">
-                  <p>{profile.primaryNarrative}</p>
+                <Section title="How To Handle It" color="green">
+                  <p>{profile.riskResponse}</p>
                 </Section>
               </div>
 
-              {/* Core Strategy */}
+              {/* ─── CORE NARRATIVE ─── */}
+              <Section title="Positioning Narrative" color="purple">
+                <p>{profile.primaryNarrative}</p>
+              </Section>
+
+              {/* ─── SUPPORTING EVIDENCE ─── */}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Section title="Strengths To Emphasize" color="green">
+                <Section title="Key Strengths" color="blue">
                   <BulletList items={profile.strengthsToEmphasize} />
                 </Section>
 
-                <Section title="Differentiators" color="blue">
+                <Section title="Differentiators" color="cyan">
                   <BulletList items={profile.differentiators} />
                 </Section>
-
-                <Section title="Experiences To Lead With" color="indigo">
-                  <BulletList items={profile.experiencesToLeadWith} />
-                </Section>
-
-                <Section title="Projects To Lead With" color="indigo">
-                  <BulletList items={profile.projectsToLeadWith} />
-                </Section>
               </div>
 
-              {/* Gaps */}
+              {/* ─── APPLICATION STRATEGY ─── */}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Section title="Gaps To Address" color="amber">
-                  <BulletList items={profile.gapsToAddress} />
-                </Section>
-
-                <Section title="Gap Handling Strategy" color="orange">
-                  <BulletList items={profile.gapHandlingStrategy} />
-                </Section>
-              </div>
-
-              {/* Recruiter & Strategies */}
-              <div className="flex flex-col gap-3">
-                <Section title="Recruiter Angle" color="cyan">
-                  <p>{profile.recruiterAngle}</p>
-                </Section>
-
                 <Section title="CV Strategy" color="neutral">
                   <p>{profile.cvStrategy}</p>
                 </Section>
 
-                <Section title="Cover Letter Strategy" color="neutral">
-                  <p>{profile.coverLetterStrategy}</p>
-                </Section>
-
-                <Section title="Screening Strategy" color="neutral">
-                  <p>{profile.screeningStrategy}</p>
+                <Section title="Interview Strategy" color="neutral">
+                  <p>{profile.interviewStrategy}</p>
                 </Section>
               </div>
             </div>

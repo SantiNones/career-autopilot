@@ -4,18 +4,27 @@ import OpenAI from "openai";
 import { prisma } from "@/lib/db";
 
 export type PositioningProfile = {
+  // Executive Summary (Primary)
   recommendedTitle: string;
+  recruiterHook: string;
+  leadWith: string[]; // Exactly 3 items
+
+  // Core Narrative
   primaryNarrative: string;
-  strengthsToEmphasize: string[];
-  differentiators: string[];
-  experiencesToLeadWith: string[];
-  projectsToLeadWith: string[];
-  gapsToAddress: string[];
-  gapHandlingStrategy: string[];
-  recruiterAngle: string;
+
+  // Risk & Response (Actionable)
+  biggestRisk: string;
+  riskResponse: string;
+
+  // Supporting Evidence
+  strengthsToEmphasize: string[]; // Max 3
+  differentiators: string[]; // Max 3
+
+  // Application Strategy
   cvStrategy: string;
-  coverLetterStrategy: string;
-  screeningStrategy: string;
+  interviewStrategy: string;
+
+  // Metadata
   confidence: number;
 };
 
@@ -120,20 +129,29 @@ function parsePositioningJson(raw: string): PositioningProfile {
 
   const d = data as Record<string, unknown>;
 
-  // Coerce to PositioningProfile with defaults
+  // Coerce to PositioningProfile V1.5 with defaults
   const profile: PositioningProfile = {
+    // Executive Summary
     recommendedTitle: typeof d.recommendedTitle === "string" ? d.recommendedTitle : "",
+    recruiterHook: typeof d.recruiterHook === "string" ? d.recruiterHook : "",
+    leadWith: Array.isArray(d.leadWith) ? d.leadWith.filter((x): x is string => typeof x === "string").slice(0, 3) : [],
+
+    // Core Narrative
     primaryNarrative: typeof d.primaryNarrative === "string" ? d.primaryNarrative : "",
-    strengthsToEmphasize: Array.isArray(d.strengthsToEmphasize) ? d.strengthsToEmphasize.filter((x): x is string => typeof x === "string") : [],
-    differentiators: Array.isArray(d.differentiators) ? d.differentiators.filter((x): x is string => typeof x === "string") : [],
-    experiencesToLeadWith: Array.isArray(d.experiencesToLeadWith) ? d.experiencesToLeadWith.filter((x): x is string => typeof x === "string") : [],
-    projectsToLeadWith: Array.isArray(d.projectsToLeadWith) ? d.projectsToLeadWith.filter((x): x is string => typeof x === "string") : [],
-    gapsToAddress: Array.isArray(d.gapsToAddress) ? d.gapsToAddress.filter((x): x is string => typeof x === "string") : [],
-    gapHandlingStrategy: Array.isArray(d.gapHandlingStrategy) ? d.gapHandlingStrategy.filter((x): x is string => typeof x === "string") : [],
-    recruiterAngle: typeof d.recruiterAngle === "string" ? d.recruiterAngle : "",
+
+    // Risk & Response
+    biggestRisk: typeof d.biggestRisk === "string" ? d.biggestRisk : "",
+    riskResponse: typeof d.riskResponse === "string" ? d.riskResponse : "",
+
+    // Supporting Evidence
+    strengthsToEmphasize: Array.isArray(d.strengthsToEmphasize) ? d.strengthsToEmphasize.filter((x): x is string => typeof x === "string").slice(0, 3) : [],
+    differentiators: Array.isArray(d.differentiators) ? d.differentiators.filter((x): x is string => typeof x === "string").slice(0, 3) : [],
+
+    // Application Strategy
     cvStrategy: typeof d.cvStrategy === "string" ? d.cvStrategy : "",
-    coverLetterStrategy: typeof d.coverLetterStrategy === "string" ? d.coverLetterStrategy : "",
-    screeningStrategy: typeof d.screeningStrategy === "string" ? d.screeningStrategy : "",
+    interviewStrategy: typeof d.interviewStrategy === "string" ? d.interviewStrategy : "",
+
+    // Metadata
     confidence: typeof d.confidence === "number" ? Math.max(0, Math.min(100, d.confidence)) : 50,
   };
 
@@ -149,67 +167,68 @@ function logTiming(label: string, startMs: number) {
 
 // ─── Prompt Builder ─────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an elite recruiter, hiring manager, and career strategist.
+const SYSTEM_PROMPT = `You are a strategic career advisor. Create an actionable positioning strategy.
 
-Your job is NOT to evaluate the candidate. That has already been done by the Fit Analysis system.
+MISSION: Give the candidate an immediate, clear action plan for this role.
 
-Your job is to determine how the candidate should be positioned to maximize interview probability for this specific role.
+OUTPUT STRUCTURE (STRICT):
 
-Focus on:
-- narrative framing
-- transferable value
-- strongest evidence
-- recruiter psychology
-- risk mitigation
-- candidate differentiation
+A. EXECUTIVE SUMMARY (Most Important)
+   - recommendedTitle: The exact role title to position for
+   - recruiterHook: ONE sentence answering "Why interview this person?"
+   - leadWith: EXACTLY 3 items. The 3 strongest pieces of evidence (projects/experiences)
 
-CONSTRAINTS:
+B. CORE NARRATIVE
+   - primaryNarrative: 1-2 sentences max. The positioning story.
+
+C. RISK & RESPONSE (Actionable)
+   - biggestRisk: ONE specific gap that could kill the candidacy
+   - riskResponse: ONE sentence on how to address/deflect it
+
+D. SUPPORTING EVIDENCE
+   - strengthsToEmphasize: EXACTLY 3 items max
+   - differentiators: EXACTLY 3 items max
+
+E. APPLICATION STRATEGY
+   - cvStrategy: 1-2 sentences on CV positioning
+   - interviewStrategy: 1-2 sentences on interview approach
+
+CONSTRAINTS (ABSOLUTE):
+- Every list: MAX 3 items
+- Every string: MAX 250 characters
+- No paragraphs, no repetition
+- No generic fluff. Be specific to this candidate and role.
 - Do not invent experience.
-- Do not invent achievements.
-- Do not invent skills.
-- Keep each list to 3-6 items maximum.
-- Keep narrative fields concise (1-2 sentences).
-- Do not produce long paragraphs.
-- Return compact JSON only.
 
 OUTPUT FORMAT:
-Return ONLY a JSON object wrapped in a "profile" field:
+Return ONLY this JSON (no markdown, no prose):
 
 {
   "profile": {
     "recommendedTitle": "string",
-    "primaryNarrative": "string - 1-2 sentences max",
-    "strengthsToEmphasize": ["string"],
-    "differentiators": ["string"],
-    "experiencesToLeadWith": ["string"],
-    "projectsToLeadWith": ["string"],
-    "gapsToAddress": ["string"],
-    "gapHandlingStrategy": ["string"],
-    "recruiterAngle": "string - one sentence",
+    "recruiterHook": "string - ONE compelling sentence",
+    "leadWith": ["exactly 3 items"],
+    "primaryNarrative": "string - 1-2 sentences",
+    "biggestRisk": "string - ONE specific gap",
+    "riskResponse": "string - ONE sentence response",
+    "strengthsToEmphasize": ["max 3 items"],
+    "differentiators": ["max 3 items"],
     "cvStrategy": "string - 1-2 sentences",
-    "coverLetterStrategy": "string - 1-2 sentences",
-    "screeningStrategy": "string - 1-2 sentences",
+    "interviewStrategy": "string - 1-2 sentences",
     "confidence": 0-100
   }
-}
+}`;
 
-RULES:
-- Return ONLY the JSON object above
-- No markdown, no code blocks, no prose
-- All arrays must have 3-6 items
-- All string fields must be non-empty
-- Confidence must be a number 0-100`;
-
-// Compressed context limits to reduce token usage
+// Aggressive context compression for <20s response time
 const LIMITS = {
-  jobDescription: 4000,
-  experience: 1200,
-  projects: 800,
-  insightNarratives: 5,
-  insightThemes: 5,
-  fitSkills: 8,
-  fitProjects: 5,
-  fitGaps: 5,
+  jobDescription: 2500,    // Reduced from 4000
+  experience: 800,         // Reduced from 1200
+  projects: 500,          // Reduced from 800
+  insightNarratives: 3,   // Reduced from 5
+  insightThemes: 3,       // Reduced from 5
+  fitSkills: 5,           // Reduced from 8
+  fitProjects: 3,         // Reduced from 5
+  fitGaps: 3,             // Reduced from 5
 } as const;
 
 function truncate(str: string | null | undefined, max: number): string {
@@ -305,10 +324,10 @@ function buildPrompt(context: {
 
   lines.push(
     "## TASK",
-    "Produce a concise positioning strategy.",
+    "Produce an ACTIONABLE positioning strategy.",
     "",
     'Return EXACTLY this JSON (no markdown, no prose):',
-    '{"profile":{"recommendedTitle":"...","primaryNarrative":"...","strengthsToEmphasize":["..."],"differentiators":["..."],"experiencesToLeadWith":["..."],"projectsToLeadWith":["..."],"gapsToAddress":["..."],"gapHandlingStrategy":["..."],"recruiterAngle":"...","cvStrategy":"...","coverLetterStrategy":"...","screeningStrategy":"...","confidence":0}}'
+    '{"profile":{"recommendedTitle":"...","recruiterHook":"...","leadWith":["...","...","..."],"primaryNarrative":"...","biggestRisk":"...","riskResponse":"...","strengthsToEmphasize":["...","...","..."],"differentiators":["...","...","..."],"cvStrategy":"...","interviewStrategy":"...","confidence":0}}'
   );
 
   return lines.filter(Boolean).join("\n");
@@ -411,40 +430,42 @@ export async function POST(
     const client = new OpenAI({ apiKey });
 
     // OpenAI structured output schemas
-    // Wrapper schema for strict structured output (OpenAI requires root object)
+    // V1.5: Concise actionable schema
     const POSITIONING_SCHEMA = {
       type: "object",
       properties: {
         profile: {
           type: "object",
           properties: {
+            // Executive Summary
             recommendedTitle: { type: "string" },
+            recruiterHook: { type: "string" },
+            leadWith: { type: "array", items: { type: "string" } },
+            // Core Narrative
             primaryNarrative: { type: "string" },
+            // Risk & Response
+            biggestRisk: { type: "string" },
+            riskResponse: { type: "string" },
+            // Supporting Evidence
             strengthsToEmphasize: { type: "array", items: { type: "string" } },
             differentiators: { type: "array", items: { type: "string" } },
-            experiencesToLeadWith: { type: "array", items: { type: "string" } },
-            projectsToLeadWith: { type: "array", items: { type: "string" } },
-            gapsToAddress: { type: "array", items: { type: "string" } },
-            gapHandlingStrategy: { type: "array", items: { type: "string" } },
-            recruiterAngle: { type: "string" },
+            // Application Strategy
             cvStrategy: { type: "string" },
-            coverLetterStrategy: { type: "string" },
-            screeningStrategy: { type: "string" },
+            interviewStrategy: { type: "string" },
+            // Metadata
             confidence: { type: "number" },
           },
           required: [
             "recommendedTitle",
+            "recruiterHook",
+            "leadWith",
             "primaryNarrative",
+            "biggestRisk",
+            "riskResponse",
             "strengthsToEmphasize",
             "differentiators",
-            "experiencesToLeadWith",
-            "projectsToLeadWith",
-            "gapsToAddress",
-            "gapHandlingStrategy",
-            "recruiterAngle",
             "cvStrategy",
-            "coverLetterStrategy",
-            "screeningStrategy",
+            "interviewStrategy",
             "confidence",
           ],
           additionalProperties: false,
@@ -470,7 +491,7 @@ export async function POST(
               strict: true,
             },
           },
-          max_output_tokens: 6000,
+          max_output_tokens: 3500,
         });
 
         // Check for incomplete/truncated response
@@ -489,7 +510,7 @@ export async function POST(
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: prompt },
           ],
-          max_tokens: 4000,
+          max_tokens: 2500,
           temperature: 0.3,
         });
         rawOutput = resp.choices[0]?.message?.content ?? "";
