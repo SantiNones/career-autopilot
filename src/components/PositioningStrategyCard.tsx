@@ -79,8 +79,8 @@ function Section({
   );
 }
 
-function BulletList({ items }: { items: string[] }) {
-  if (!items.length) return <p className="text-xs text-zinc-400">None identified.</p>;
+function BulletList({ items }: { items: string[] | undefined | null }) {
+  if (!items || items.length === 0) return <p className="text-xs text-zinc-400">None identified.</p>;
   return (
     <ul className="flex flex-col gap-1.5">
       {items.map((item, i) => (
@@ -93,8 +93,8 @@ function BulletList({ items }: { items: string[] }) {
   );
 }
 
-function NumberedList({ items }: { items: string[] }) {
-  if (!items.length) return <p className="text-xs text-zinc-400">None identified.</p>;
+function NumberedList({ items }: { items: string[] | undefined | null }) {
+  if (!items || items.length === 0) return <p className="text-xs text-zinc-400">None identified.</p>;
   return (
     <ol className="flex flex-col gap-2">
       {items.map((item, i) => (
@@ -227,13 +227,13 @@ export function PositioningStrategyCard({
                 {/* Recommended Position */}
                 <div className="mb-4">
                   <p className="text-xs text-indigo-600 mb-1">Recommended Position</p>
-                  <p className="text-lg font-bold text-indigo-900">{profile.recommendedTitle}</p>
+                  <p className="text-lg font-bold text-indigo-900">{profile.recommendedTitle || "Not specified"}</p>
                 </div>
 
                 {/* Recruiter Hook */}
                 <div className="mb-4">
                   <p className="text-xs text-indigo-600 mb-1">Recruiter Hook</p>
-                  <p className="text-sm font-medium text-indigo-900 leading-relaxed">{profile.recruiterHook}</p>
+                  <p className="text-sm font-medium text-indigo-900 leading-relaxed">{profile.recruiterHook || "No hook available"}</p>
                 </div>
 
                 {/* Lead With */}
@@ -246,17 +246,17 @@ export function PositioningStrategyCard({
               {/* ─── RISK & RESPONSE (Actionable) ─── */}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Section title="Biggest Risk" color="red">
-                  <p className="font-medium text-rose-700">{profile.biggestRisk}</p>
+                  <p className="font-medium text-rose-700">{profile.biggestRisk || "No major risks identified"}</p>
                 </Section>
 
                 <Section title="How To Handle It" color="green">
-                  <p>{profile.riskResponse}</p>
+                  <p>{profile.riskResponse || "No response strategy available"}</p>
                 </Section>
               </div>
 
               {/* ─── CORE NARRATIVE ─── */}
               <Section title="Positioning Narrative" color="purple">
-                <p>{profile.primaryNarrative}</p>
+                <p>{profile.primaryNarrative || "No narrative available"}</p>
               </Section>
 
               {/* ─── SUPPORTING EVIDENCE ─── */}
@@ -273,11 +273,11 @@ export function PositioningStrategyCard({
               {/* ─── APPLICATION STRATEGY ─── */}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Section title="CV Strategy" color="neutral">
-                  <p>{profile.cvStrategy}</p>
+                  <p>{profile.cvStrategy || "No CV strategy available"}</p>
                 </Section>
 
                 <Section title="Interview Strategy" color="neutral">
-                  <p>{profile.interviewStrategy}</p>
+                  <p>{profile.interviewStrategy || "No interview strategy available"}</p>
                 </Section>
               </div>
             </div>
