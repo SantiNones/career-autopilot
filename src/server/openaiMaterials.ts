@@ -44,6 +44,20 @@ type FitAnalysisInput = {
   seniorityDetected: string;
 };
 
+type PositioningStrategy = {
+  recommendedTitle: string;
+  recruiterHook: string;
+  leadWith: string[];
+  primaryNarrative: string;
+  biggestRisk: string;
+  riskResponse: string;
+  strengthsToEmphasize: string[];
+  differentiators: string[];
+  cvStrategy: string;
+  interviewStrategy: string;
+  confidence: number;
+};
+
 type Job = {
   title: string | null;
   companyName: string | null;
@@ -848,6 +862,26 @@ export function buildNarrativeAnalysis(
 
 const SYSTEM_PROMPT = `You are a senior career coach and recruiter producing job application materials.
 
+MATERIAL GENERATION PHILOSOPHY (V2):
+Your job is not to summarize the candidate.
+Your job is to MAXIMIZE INTERVIEW PROBABILITY while remaining completely truthful.
+
+You are positioning the candidate according to the POSITIONING STRATEGY.
+The Positioning Strategy is the HIGHEST-PRIORITY guidance after factual accuracy.
+
+Use Lead With items as PRIMARY evidence.
+Use Experience Intelligence as SUPPORTING context.
+Use Fit Analysis to prioritize relevant skills.
+Use Relevance Engine selections as preferred projects and experiences.
+
+Do NOT contradict the Positioning Strategy.
+Do NOT invent achievements.
+Do NOT invent experience.
+Do NOT invent technologies.
+
+Prefer OUTCOMES over responsibilities.
+Prefer BUSINESS VALUE over task descriptions.
+
 CORE PHILOSOPHY:
 You do NOT match keywords. You build positioning.
 Every material should feel like it was written by a skilled recruiter who understands both the candidate and the role deeply.
@@ -858,9 +892,18 @@ EXPERIENCE INTELLIGENCE RULE:
 - Use insights to INFORM word choice, transferable skill framing, and achievement emphasis — not to paste content.
 - Never invent experience, technologies, or achievements beyond what is in the candidate data.
 
+POSITIONING STRATEGY RULE (CRITICAL — highest priority):
+- The POSITIONING STRATEGY section contains: Recommended Position, Recruiter Hook, Lead With, Biggest Risk, Risk Response, Key Strengths, Differentiators, CV Strategy, Interview Strategy.
+- ALL materials must follow this positioning. Do not deviate.
+- Lead With items are the PRIMARY evidence to feature. They must appear first and be emphasized.
+- Biggest Risk must be addressed (indirectly or directly) using the Risk Response provided.
+- Key Strengths should appear naturally across all materials.
+- Differentiators should be woven into CV bullets and screening answers.
+- CV Strategy should guide section ordering and content selection.
+
 STRICT RULES — follow all of them:
 - Use ONLY the candidate data provided. Never invent experience, employers, skills, projects, or dates.
-- Follow the POSITIONING STRATEGY provided in the NARRATIVE ANALYSIS section.
+- Follow the POSITIONING STRATEGY. It overrides generic best practices.
 - Prioritise the STRONGEST RELEVANT PROJECTS and STRONGEST RELEVANT EXPERIENCE identified in the analysis.
 - Do not list every skill or every project. Omit what is not relevant.
 - Address CANDIDATE GAPS honestly using the RECRUITER REASSURANCES where applicable. Do not hide or ignore them.
@@ -1027,8 +1070,9 @@ export async function generateOpenAiMaterials(args: {
   evaluation: Evaluation | null;
   fitAnalysis: FitAnalysisInput | null;
   experienceInsights: ExperienceInsightEntry[] | null;
+  positioningStrategy: PositioningStrategy | null;
 }): Promise<GeneratedMaterials> {
-  const { profile, preferences, resume, job, evaluation, fitAnalysis, experienceInsights } = args;
+  const { profile, preferences, resume, job, evaluation, fitAnalysis, experienceInsights, positioningStrategy } = args;
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model = process.env.OPENAI_MODEL ?? "gpt-4o";
@@ -1191,6 +1235,26 @@ export async function generateOpenAiMaterials(args: {
     return lines.join("\n").trim();
   })();
 
+  // ── Positioning Strategy block ────────────────────────────────────────────
+  const positioningBlock = positioningStrategy
+    ? [
+        "## POSITIONING STRATEGY",
+        "This is the HIGHEST-PRIORITY guidance for all materials.",
+        "",
+        `Recommended Position: ${positioningStrategy.recommendedTitle}`,
+        positioningStrategy.recruiterHook ? `Recruiter Hook: ${positioningStrategy.recruiterHook}` : "",
+        positioningStrategy.leadWith?.length ? `Lead With:\n${positioningStrategy.leadWith.map((i) => `- ${i}`).join("\n")}` : "",
+        positioningStrategy.primaryNarrative ? `Positioning Narrative: ${positioningStrategy.primaryNarrative}` : "",
+        positioningStrategy.biggestRisk ? `Biggest Risk: ${positioningStrategy.biggestRisk}` : "",
+        positioningStrategy.riskResponse ? `Risk Response: ${positioningStrategy.riskResponse}` : "",
+        positioningStrategy.strengthsToEmphasize?.length ? `Key Strengths:\n${positioningStrategy.strengthsToEmphasize.map((s) => `- ${s}`).join("\n")}` : "",
+        positioningStrategy.differentiators?.length ? `Differentiators:\n${positioningStrategy.differentiators.map((d) => `- ${d}`).join("\n")}` : "",
+        positioningStrategy.cvStrategy ? `CV Strategy: ${positioningStrategy.cvStrategy}` : "",
+        positioningStrategy.interviewStrategy ? `Interview Strategy: ${positioningStrategy.interviewStrategy}` : "",
+        `Confidence: ${positioningStrategy.confidence}%`,
+      ].filter(Boolean).join("\n")
+    : "";
+
   // ── Assemble user message ────────────────────────────────────────────────────
   const userContent = [
     "## CANDIDATE PROFILE",
@@ -1205,12 +1269,19 @@ export async function generateOpenAiMaterials(args: {
     ...(fitBlock ? ["", "## FIT ANALYSIS", fitBlock] : []),
     ...(evalBlock ? ["", "## EVALUATION", evalBlock] : []),
     "",
+    ...(positioningBlock ? [positioningBlock, ""] : []),
     "## NARRATIVE ANALYSIS",
     "Use this section to drive all materials. Do not ignore it.",
     narrativeBlock,
   ]
     .join("\n")
     .trim();
+
+  // ── Debug logging ───────────────────────────────────────────────────────────
+  if (positioningStrategy) {
+    console.log("[materials] recommendedPosition:", positioningStrategy.recommendedTitle);
+    console.log("[materials] leadWith:", positioningStrategy.leadWith.join(", ") || "none");
+  }
 
   // ── Call OpenAI ──────────────────────────────────────────────────────────────
   const isGpt5 = model.startsWith("gpt-5") || model.startsWith("o");

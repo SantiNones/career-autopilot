@@ -29,7 +29,7 @@ export async function POST(
       return NextResponse.json({ error: "Select at least one material." }, { status: 400 });
     }
 
-    const [job, profile, resume, rawFitAnalysis] = await Promise.all([
+    const [job, profile, resume, rawFitAnalysis, rawPositioning] = await Promise.all([
       prisma.jobPosting.findUnique({
         where: { id },
         include: {
@@ -45,6 +45,7 @@ export async function POST(
         include: { experienceInsight: true },
       }),
       prisma.fitAnalysis.findUnique({ where: { jobPostingId: id } }),
+      prisma.positioningProfile.findUnique({ where: { jobPostingId: id } }),
     ]);
 
     if (!job) {
@@ -64,6 +65,24 @@ export async function POST(
           gaps: rawFitAnalysis.gaps as string[],
           confidenceScore: rawFitAnalysis.confidenceScore,
           seniorityDetected: rawFitAnalysis.seniorityDetected,
+        }
+      : null;
+
+    // Parse positioning profile (V1.5 structure)
+    const rawProfile = rawPositioning?.profile as Record<string, unknown> | undefined;
+    const positioningStrategy = rawProfile
+      ? {
+          recommendedTitle: String(rawProfile.recommendedTitle || ""),
+          recruiterHook: String(rawProfile.recruiterHook || ""),
+          leadWith: Array.isArray(rawProfile.leadWith) ? rawProfile.leadWith as string[] : [],
+          primaryNarrative: String(rawProfile.primaryNarrative || ""),
+          biggestRisk: String(rawProfile.biggestRisk || ""),
+          riskResponse: String(rawProfile.riskResponse || ""),
+          strengthsToEmphasize: Array.isArray(rawProfile.strengthsToEmphasize) ? rawProfile.strengthsToEmphasize as string[] : [],
+          differentiators: Array.isArray(rawProfile.differentiators) ? rawProfile.differentiators as string[] : [],
+          cvStrategy: String(rawProfile.cvStrategy || ""),
+          interviewStrategy: String(rawProfile.interviewStrategy || ""),
+          confidence: Number(rawProfile.confidence || 0),
         }
       : null;
 
@@ -96,6 +115,7 @@ export async function POST(
           evaluation: ev,
           fitAnalysis,
           experienceInsights,
+          positioningStrategy,
         });
         generatedBy = "openai";
       } catch (aiErr) {
