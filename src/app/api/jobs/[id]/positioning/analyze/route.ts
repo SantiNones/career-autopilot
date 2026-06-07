@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
 import { prisma } from "@/lib/db";
+import { buildRelevanceContext, RelevanceContext } from "@/server/relevanceEngine";
 
 export type PositioningProfile = {
   // Executive Summary (Primary)
@@ -333,6 +334,78 @@ function buildPrompt(context: {
   return lines.filter(Boolean).join("\n");
 }
 
+// ─── NEW: Relevance-Based Prompt Builder ────────────────────────────────────
+
+function buildPromptFromRelevance(
+  job: { title: string | null; rawText: string | null },
+  relevance: RelevanceContext
+): string {
+  const lines: string[] = [
+    "## JOB",
+    `Title: ${job.title ?? "Unknown"}`,
+    truncate(job.rawText, 2000) || "",
+    "",
+    "## ROLE SIGNALS",
+    `Family: ${relevance.jobSignals.roleFamily}`,
+    `Seniority: ${relevance.jobSignals.seniority}`,
+    relevance.jobSignals.domainSignals.length ? `Domains: ${relevance.jobSignals.domainSignals.join(", ")}` : "",
+    relevance.jobSignals.technicalSignals.length ? `Technologies: ${relevance.jobSignals.technicalSignals.join(", ")}` : "",
+    relevance.jobSignals.softSkillSignals.length ? `Soft Skills: ${relevance.jobSignals.softSkillSignals.join(", ")}` : "",
+    relevance.jobSignals.mustHaveSignals.length ? `Must-Have: ${relevance.jobSignals.mustHaveSignals.join("; ")}` : "",
+    "",
+  ];
+
+  // Relevant Projects
+  if (relevance.relevantProjects.length > 0) {
+    lines.push("## RELEVANT PROJECTS (High-Signal)");
+    for (const p of relevance.relevantProjects.slice(0, 4)) {
+      lines.push(
+        `- ${p.name} (score: ${p.relevanceScore})`,
+        `  Why: ${p.reason}`,
+        p.signals.length ? `  Signals: ${p.signals.join(", ")}` : ""
+      );
+    }
+    lines.push("");
+  }
+
+  // Relevant Experiences
+  if (relevance.relevantExperiences.length > 0) {
+    lines.push("## RELEVANT EXPERIENCE (High-Signal)");
+    for (const e of relevance.relevantExperiences.slice(0, 4)) {
+      lines.push(
+        `- ${e.role} @ ${e.company} (score: ${e.relevanceScore})`,
+        `  Why: ${e.reason}`,
+        e.signals.length ? `  Signals: ${e.signals.join(", ")}` : ""
+      );
+    }
+    lines.push("");
+  }
+
+  // Top Strengths & Gaps
+  if (relevance.topStrengths.length > 0) {
+    lines.push("## TOP STRENGTHS", relevance.topStrengths.join("; "), "");
+  }
+
+  if (relevance.topGaps.length > 0) {
+    lines.push("## TOP GAPS", relevance.topGaps.join("; "), "");
+  }
+
+  // Positioning Hints
+  if (relevance.positioningHints.length > 0) {
+    lines.push("## POSITIONING HINTS", ...relevance.positioningHints.map((h) => `- ${h}`), "");
+  }
+
+  lines.push(
+    "## TASK",
+    "Produce an ACTIONABLE positioning strategy based ONLY on the high-signal evidence above.",
+    "",
+    'Return EXACTLY this JSON (no markdown, no prose):',
+    '{"profile":{"recommendedTitle":"...","recruiterHook":"...","leadWith":["...","...","..."],"primaryNarrative":"...","biggestRisk":"...","riskResponse":"...","strengthsToEmphasize":["...","...","..."],"differentiators":["...","...","..."],"cvStrategy":"...","interviewStrategy":"...","confidence":0}}'
+  );
+
+  return lines.filter(Boolean).join("\n");
+}
+
 export async function POST(
   req: Request,
   props: { params: Promise<{ id: string }> }
@@ -406,14 +479,36 @@ export async function POST(
         }>)
       : null;
 
-    const prompt = buildPrompt({
-      job,
-      profile: profile ?? { fullName: null, headline: null },
-      resume,
+    // ─── REVELANCE ENGINE INTEGRATION ────────────────────────────────────────
+
+    // Parse projects from resume (extract structured data if available)
+    const projects = resume?.projects
+      ? resume.projects.split(/\n{2,}/).map((block: string, i: number) => {
+          const lines = block.split("\n").filter(Boolean);
+          const name = lines[0]?.replace(/^#+\s*/, "").split(":")[0] || `Project ${i + 1}`;
+          const description = lines.slice(1).join(" ").slice(0, 300);
+          return { name, description };
+        }).slice(0, 8)
+      : [];
+
+    // Parse experiences from insights (structured)
+    const experiences = experienceInsights?.map((insight) => ({
+      company: insight.company,
+      role: insight.role,
+      transferableNarratives: insight.transferableNarratives,
+      professionalThemes: insight.professionalThemes,
+      workEnvironment: insight.workEnvironment,
+      metrics: insight.metrics,
+    })) || [];
+
+    // Build relevance context
+    const relevanceContext = buildRelevanceContext({
+      job: { title: job.title, rawText: job.rawText },
+      projects,
+      experiences,
       fitAnalysis: fitAnalysis
         ? {
             recommendedAngle: fitAnalysis.recommendedAngle,
-            jobFocus: fitAnalysis.jobFocus,
             matchingSkills: fitAnalysis.matchingSkills as string[],
             matchingProjects: fitAnalysis.matchingProjects as string[],
             strengths: fitAnalysis.strengths as string[],
@@ -422,10 +517,19 @@ export async function POST(
             seniorityDetected: fitAnalysis.seniorityDetected,
           }
         : null,
-      experienceInsights,
     });
 
+    // Build optimized prompt using relevance context
+    const prompt = buildPromptFromRelevance(
+      { title: job.title, rawText: job.rawText },
+      relevanceContext
+    );
+
+    // Log selected evidence for debugging
+    console.log(`[positioning/analyze] relevance: ${relevanceContext.relevantProjects.length} projects, ${relevanceContext.relevantExperiences.length} experiences`);
     console.log(`[positioning/analyze] input chars: ${prompt.length}`);
+    console.log(`[positioning/relevance] projects: ${relevanceContext.relevantProjects.map(p => `${p.name}(${p.relevanceScore})`).join(", ") || "none"}`);
+    console.log(`[positioning/relevance] experiences: ${relevanceContext.relevantExperiences.map(e => `${e.company}(${e.relevanceScore})`).join(", ") || "none"}`);
 
     const client = new OpenAI({ apiKey });
 
