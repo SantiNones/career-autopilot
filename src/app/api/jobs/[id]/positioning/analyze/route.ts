@@ -113,22 +113,33 @@ CONSTRAINTS:
 - Do not produce long paragraphs.
 - Return compact JSON only.
 
-OUTPUT RULES:
-- recommendedTitle: a concise professional title
-- primaryNarrative: 1-2 sentences max
-- strengthsToEmphasize: 3-5 items
-- differentiators: 2-4 items
-- experiencesToLeadWith: 2-4 company names
-- projectsToLeadWith: 1-3 project names
-- gapsToAddress: 2-4 honest gaps
-- gapHandlingStrategy: brief mitigation per gap
-- recruiterAngle: one compelling sentence
-- cvStrategy: 1-2 sentences
-- coverLetterStrategy: 1-2 sentences
-- screeningStrategy: 1-2 sentences
-- confidence: 0-100 integer
+OUTPUT FORMAT:
+Return ONLY a JSON object wrapped in a "profile" field:
 
-Return valid JSON only. No markdown, no code blocks.`;
+{
+  "profile": {
+    "recommendedTitle": "string",
+    "primaryNarrative": "string - 1-2 sentences max",
+    "strengthsToEmphasize": ["string"],
+    "differentiators": ["string"],
+    "experiencesToLeadWith": ["string"],
+    "projectsToLeadWith": ["string"],
+    "gapsToAddress": ["string"],
+    "gapHandlingStrategy": ["string"],
+    "recruiterAngle": "string - one sentence",
+    "cvStrategy": "string - 1-2 sentences",
+    "coverLetterStrategy": "string - 1-2 sentences",
+    "screeningStrategy": "string - 1-2 sentences",
+    "confidence": 0-100
+  }
+}
+
+RULES:
+- Return ONLY the JSON object above
+- No markdown, no code blocks, no prose
+- All arrays must have 3-6 items
+- All string fields must be non-empty
+- Confidence must be a number 0-100`;
 
 // Compressed context limits to reduce token usage
 const LIMITS = {
@@ -237,8 +248,8 @@ function buildPrompt(context: {
     "## TASK",
     "Produce a concise positioning strategy.",
     "",
-    "JSON format:",
-    '{"recommendedTitle":"...","primaryNarrative":"...","strengthsToEmphasize":["..."],"differentiators":["..."],"experiencesToLeadWith":["..."],"projectsToLeadWith":["..."],"gapsToAddress":["..."],"gapHandlingStrategy":["..."],"recruiterAngle":"...","cvStrategy":"...","coverLetterStrategy":"...","screeningStrategy":"...","confidence":0}'
+    'Return EXACTLY this JSON (no markdown, no prose):',
+    '{"profile":{"recommendedTitle":"...","primaryNarrative":"...","strengthsToEmphasize":["..."],"differentiators":["..."],"experiencesToLeadWith":["..."],"projectsToLeadWith":["..."],"gapsToAddress":["..."],"gapHandlingStrategy":["..."],"recruiterAngle":"...","cvStrategy":"...","coverLetterStrategy":"...","screeningStrategy":"...","confidence":0}}'
   );
 
   return lines.filter(Boolean).join("\n");
@@ -341,38 +352,46 @@ export async function POST(
     const client = new OpenAI({ apiKey });
 
     // OpenAI structured output schemas
+    // Wrapper schema for strict structured output (OpenAI requires root object)
     const POSITIONING_SCHEMA = {
       type: "object",
       properties: {
-        recommendedTitle: { type: "string" },
-        primaryNarrative: { type: "string" },
-        strengthsToEmphasize: { type: "array", items: { type: "string" } },
-        differentiators: { type: "array", items: { type: "string" } },
-        experiencesToLeadWith: { type: "array", items: { type: "string" } },
-        projectsToLeadWith: { type: "array", items: { type: "string" } },
-        gapsToAddress: { type: "array", items: { type: "string" } },
-        gapHandlingStrategy: { type: "array", items: { type: "string" } },
-        recruiterAngle: { type: "string" },
-        cvStrategy: { type: "string" },
-        coverLetterStrategy: { type: "string" },
-        screeningStrategy: { type: "string" },
-        confidence: { type: "number" },
+        profile: {
+          type: "object",
+          properties: {
+            recommendedTitle: { type: "string" },
+            primaryNarrative: { type: "string" },
+            strengthsToEmphasize: { type: "array", items: { type: "string" } },
+            differentiators: { type: "array", items: { type: "string" } },
+            experiencesToLeadWith: { type: "array", items: { type: "string" } },
+            projectsToLeadWith: { type: "array", items: { type: "string" } },
+            gapsToAddress: { type: "array", items: { type: "string" } },
+            gapHandlingStrategy: { type: "array", items: { type: "string" } },
+            recruiterAngle: { type: "string" },
+            cvStrategy: { type: "string" },
+            coverLetterStrategy: { type: "string" },
+            screeningStrategy: { type: "string" },
+            confidence: { type: "number" },
+          },
+          required: [
+            "recommendedTitle",
+            "primaryNarrative",
+            "strengthsToEmphasize",
+            "differentiators",
+            "experiencesToLeadWith",
+            "projectsToLeadWith",
+            "gapsToAddress",
+            "gapHandlingStrategy",
+            "recruiterAngle",
+            "cvStrategy",
+            "coverLetterStrategy",
+            "screeningStrategy",
+            "confidence",
+          ],
+          additionalProperties: false,
+        },
       },
-      required: [
-        "recommendedTitle",
-        "primaryNarrative",
-        "strengthsToEmphasize",
-        "differentiators",
-        "experiencesToLeadWith",
-        "projectsToLeadWith",
-        "gapsToAddress",
-        "gapHandlingStrategy",
-        "recruiterAngle",
-        "cvStrategy",
-        "coverLetterStrategy",
-        "screeningStrategy",
-        "confidence",
-      ],
+      required: ["profile"],
       additionalProperties: false,
     } as const;
 
