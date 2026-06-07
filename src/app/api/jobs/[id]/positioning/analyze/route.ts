@@ -19,6 +19,65 @@ export type PositioningProfile = {
   confidence: number;
 };
 
+// ─── GPT-5 Responses Output Extractor ───────────────────────────────────────
+
+interface ResponseItem {
+  type?: string;
+  content?: Array<{ type?: string; text?: string }>;
+  text?: string;
+}
+
+interface ResponseObject {
+  output_text?: string | null;
+  output?: unknown[];
+  incomplete?: boolean | null;
+  incomplete_details?: { reason?: string } | null;
+  refusal?: unknown;
+  refusal_details?: unknown;
+}
+
+function extractResponsesText(resp: ResponseObject): string {
+  // First try direct output_text
+  if (resp.output_text && resp.output_text.trim().length > 0) {
+    return resp.output_text;
+  }
+
+  // Otherwise scan output array
+  if (Array.isArray(resp.output)) {
+    const texts: string[] = [];
+    for (const rawItem of resp.output) {
+      const item = rawItem as ResponseItem;
+      // Handle output_text type
+      if (item.type === "output_text" && item.text) {
+        texts.push(item.text);
+      }
+      // Handle content items
+      if (item.content && Array.isArray(item.content)) {
+        for (const rawContent of item.content) {
+          const content = rawContent as { type?: string; text?: string };
+          if (content.text) {
+            texts.push(content.text);
+          }
+        }
+      }
+    }
+    if (texts.length > 0) {
+      return texts.join("");
+    }
+  }
+
+  // Check for incomplete/refusal
+  if (resp.incomplete) {
+    const reason = (resp.incomplete_details as { reason?: string } | null)?.reason ?? "unknown reason";
+    throw new Error(`Positioning analysis incomplete: ${reason}`);
+  }
+  if (resp.refusal) {
+    throw new Error("Positioning analysis refused: model refused to generate output");
+  }
+
+  return "";
+}
+
 // ─── Safe JSON Parser ───────────────────────────────────────────────────────
 
 function extractJson(raw: string): string {
@@ -413,7 +472,15 @@ export async function POST(
           },
           max_output_tokens: 2500,
         });
-        rawOutput = resp.output_text ?? "";
+        // TEMPORARY: Full inspection logging (remove before commit)
+        const respAny = resp as unknown as Record<string, unknown>;
+        console.log("[positioning/analyze] response keys:", Object.keys(respAny));
+        console.log("[positioning/analyze] output_text:", JSON.stringify(respAny.output_text));
+        console.log("[positioning/analyze] output:", JSON.stringify(respAny.output, null, 2).slice(0, 4000));
+        console.log("[positioning/analyze] incomplete:", respAny.incomplete, respAny.incomplete_details);
+        console.log("[positioning/analyze] refusal:", respAny.refusal, respAny.refusal_details);
+
+        rawOutput = extractResponsesText(resp as ResponseObject);
       } else {
         const resp = await client.chat.completions.create({
           model,
