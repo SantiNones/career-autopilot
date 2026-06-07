@@ -470,15 +470,15 @@ export async function POST(
               strict: true,
             },
           },
-          max_output_tokens: 2500,
+          max_output_tokens: 6000,
         });
-        // TEMPORARY: Full inspection logging (remove before commit)
+
+        // Check for incomplete/truncated response
         const respAny = resp as unknown as Record<string, unknown>;
-        console.log("[positioning/analyze] response keys:", Object.keys(respAny));
-        console.log("[positioning/analyze] output_text:", JSON.stringify(respAny.output_text));
-        console.log("[positioning/analyze] output:", JSON.stringify(respAny.output, null, 2).slice(0, 4000));
-        console.log("[positioning/analyze] incomplete:", respAny.incomplete, respAny.incomplete_details);
-        console.log("[positioning/analyze] refusal:", respAny.refusal, respAny.refusal_details);
+        const incompleteDetails = respAny.incomplete_details as { reason?: string } | undefined;
+        if (incompleteDetails?.reason === "max_output_tokens") {
+          throw new Error("Positioning analysis output was truncated. The profile requires more tokens to generate. Consider reducing context size or increasing token limit.");
+        }
 
         rawOutput = extractResponsesText(resp as ResponseObject);
       } else {
@@ -489,7 +489,7 @@ export async function POST(
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: prompt },
           ],
-          max_tokens: 2000,
+          max_tokens: 4000,
           temperature: 0.3,
         });
         rawOutput = resp.choices[0]?.message?.content ?? "";
