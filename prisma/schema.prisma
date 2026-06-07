@@ -273,3 +273,22 @@ model PositioningProfile {
 
   profile Json
 }
+
+model RecommendedJob {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  title       String
+  company     String
+  location    String?
+  description String?
+  applyUrl    String
+  source      String
+
+  matchScore  Int      @default(0)
+  fitAnalysis Json?
+
+  @@index([matchScore])
+  @@index([source])
+}
