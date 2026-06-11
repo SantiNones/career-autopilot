@@ -7,6 +7,7 @@ import { BulkIngestForm } from "@/components/BulkIngestForm";
 import { RescoreButton } from "@/components/RescoreButton";
 import { JobTableRow } from "@/components/JobTableRow";
 import { ClearAllJobsButton } from "@/components/ClearAllJobsButton";
+import { RecommendedJobsSection } from "@/components/RecommendedJobsSection";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,11 @@ export default async function Home() {
   });
 
   const m = calculateMetrics(jobs);
+
+  const recommendedJobs = await prisma.recommendedJob.findMany({
+    orderBy: [{ matchScore: "desc" }, { discoveredAt: "desc" }],
+    take: 50,
+  });
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -94,6 +100,23 @@ export default async function Home() {
             </div>
           </div>
         </div>
+
+        {/* Recommended jobs */}
+        <RecommendedJobsSection
+          initialJobs={recommendedJobs.map((j) => ({
+            id: j.id,
+            title: j.title,
+            company: j.company,
+            location: j.location,
+            applyUrl: j.applyUrl,
+            source: j.source,
+            provider: j.provider,
+            matchScore: j.matchScore,
+            label: j.label,
+            reasons: j.reasons,
+            risks: j.risks,
+          }))}
+        />
 
         {/* Ingest panels */}
         <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">

@@ -2,109 +2,121 @@
 
 import { useState } from "react";
 
-interface RecommendedJob {
+type RecommendedJob = {
   id: string;
   title: string;
   company: string;
   location: string | null;
-  source: string;
-  matchScore: number;
   applyUrl: string;
-  createdAt: Date;
+  source: string;
+  provider: string;
+  matchScore: number;
+  label: string | null;
+  reasons: unknown;
+  risks: unknown;
+};
+
+type DiscoverySummary = {
+  providersRun: number;
+  companiesScanned: number;
+  jobsFetched: number;
+  afterDedupe: number;
+  jobsSaved: number;
+  topMatches: Array<{ company: string; title: string; matchScore: number }>;
+};
+
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
-function ScorePill({ score }: { score: number }) {
-  const color =
+function ScoreBadge({ score }: { score: number }) {
+  const cls =
     score >= 70
       ? "bg-emerald-100 text-emerald-800"
       : score >= 50
         ? "bg-amber-100 text-amber-800"
         : "bg-rose-100 text-rose-800";
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums ${color}`}
-    >
+    <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold tabular-nums ${cls}`}>
       {score}
     </span>
   );
 }
 
-export function RecommendedJobsSection({
-  initialJobs,
-}: {
-  initialJobs: RecommendedJob[];
-}) {
+function LabelBadge({ label }: { label: string | null }) {
+  if (!label) return null;
+  const cls =
+    label === "APPLY"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : label === "MAYBE"
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : "bg-zinc-50 text-zinc-500 border-zinc-200";
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+export function RecommendedJobsSection({ initialJobs }: { initialJobs: RecommendedJob[] }) {
   const [jobs, setJobs] = useState<RecommendedJob[]>(initialJobs);
-  const [isDiscovering, setIsDiscovering] = useState(false);
-  const [lastResult, setLastResult] = useState<{
-    totalFetched: number;
-    afterDedupe: number;
-    saved: number;
-  } | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [summary, setSummary] = useState<DiscoverySummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleDiscover() {
-    setIsDiscovering(true);
-    setLastResult(null);
+    setIsRunning(true);
+    setError(null);
+    setSummary(null);
 
     try {
-      const response = await fetch("/api/jobs/discover", {
-        method: "POST",
-      });
+      const runRes = await fetch("/api/discovery/run", { method: "POST" });
+      const runData = await runRes.json();
 
-      const data = await response.json();
-
-      if (data.success) {
-        setLastResult({
-          totalFetched: data.totalFetched,
-          afterDedupe: data.afterDedupe,
-          saved: data.saved,
-        });
-        // Refresh the page to get updated jobs
-        window.location.reload();
-      } else {
-        console.error("Discovery failed:", data.error);
-        alert(`Discovery failed: ${data.error}`);
+      if (!runData.success) {
+        setError(runData.error ?? "Discovery failed");
+        return;
       }
-    } catch (error) {
-      console.error("Discovery error:", error);
-      alert("Discovery failed. Please try again.");
+
+      setSummary(runData as DiscoverySummary);
+
+      const listRes = await fetch("/api/discovery/recommended");
+      const listData = await listRes.json();
+      if (listData.success) {
+        setJobs(listData.jobs as RecommendedJob[]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Discovery failed");
     } finally {
-      setIsDiscovering(false);
+      setIsRunning(false);
     }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-900">Recommended Jobs</h2>
+    <div className="mb-6 overflow-hidden rounded-xl border border-zinc-200 bg-white">
+      <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900">Recommended Jobs</h2>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            Public jobs discovered from Greenhouse, Lever, and Ashby, scored against your preferences.
+          </p>
+        </div>
         <button
           onClick={handleDiscover}
-          disabled={isDiscovering}
-          className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isRunning}
+          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isDiscovering ? (
+          {isRunning ? (
             <>
-              <svg
-                className="mr-2 h-4 w-4 animate-spin"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
+              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path
                   className="opacity-75"
                   fill="currentColor"
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 />
               </svg>
-              Discovering...
+              Discovering…
             </>
           ) : (
             "Discover Jobs"
@@ -112,103 +124,69 @@ export function RecommendedJobsSection({
         </button>
       </div>
 
-      {lastResult && (
-        <div className="rounded-md bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
-          Found {lastResult.totalFetched} jobs, deduped to {lastResult.afterDedupe},
-          saved {lastResult.saved} top matches.
+      {error && (
+        <div className="border-b border-rose-100 bg-rose-50 px-5 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
+
+      {summary && (
+        <div className="border-b border-zinc-100 bg-zinc-50/70 px-5 py-3 text-xs text-zinc-600">
+          Scanned <strong>{summary.companiesScanned}</strong> companies across{" "}
+          <strong>{summary.providersRun}</strong> providers · fetched{" "}
+          <strong>{summary.jobsFetched}</strong> jobs · <strong>{summary.afterDedupe}</strong>{" "}
+          after dedupe · saved <strong>{summary.jobsSaved}</strong> recommendations.
         </div>
       )}
 
       {jobs.length === 0 ? (
-        <div className="rounded-lg border border-zinc-200 bg-white px-6 py-12 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100">
-            <svg
-              className="h-6 w-6 text-zinc-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <h3 className="text-sm font-medium text-zinc-900">No recommended jobs yet</h3>
-          <p className="mt-1 text-sm text-zinc-500">
-            Click "Discover Jobs" to find and score jobs from top companies.
+        <div className="px-5 py-12 text-center">
+          <p className="text-sm text-zinc-400">No recommended jobs yet.</p>
+          <p className="mt-1 text-xs text-zinc-300">
+            Click “Discover Jobs” to fetch and score public jobs.
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-zinc-200">
-          <table className="min-w-full divide-y divide-zinc-200">
-            <thead className="bg-zinc-50">
-              <tr>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Match
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Job
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Location
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Source
-                </th>
-                <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200 bg-white">
-              {jobs.map((job) => (
-                <tr key={job.id} className="hover:bg-zinc-50">
-                  <td className="px-5 py-3.5">
-                    <ScorePill score={job.matchScore} />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="font-medium text-zinc-900">{job.title}</div>
-                    <div className="mt-0.5 text-xs text-zinc-500">{job.company}</div>
-                  </td>
-                  <td className="px-5 py-3.5 text-sm text-zinc-600">
-                    {job.location || "Not specified"}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">
-                      {job.source}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <a
-                      href={job.applyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center rounded-md bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-                    >
-                      Apply
-                      <svg
-                        className="ml-1 h-3 w-3"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                        />
-                      </svg>
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="divide-y divide-zinc-100">
+          {jobs.map((job) => {
+            const reasons = toStringArray(job.reasons);
+            const risks = toStringArray(job.risks);
+            return (
+              <li key={job.id} className="flex items-start gap-4 px-5 py-4">
+                <ScoreBadge score={job.matchScore} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-zinc-900">{job.title}</span>
+                    <LabelBadge label={job.label} />
+                  </div>
+                  <div className="mt-0.5 text-xs text-zinc-500">
+                    {job.company}
+                    {job.location ? ` · ${job.location}` : ""} ·{" "}
+                    <span className="text-zinc-400">{job.source}</span>
+                  </div>
+                  {reasons.length > 0 && (
+                    <p className="mt-1.5 text-xs text-emerald-700">
+                      {reasons.slice(0, 2).join(" · ")}
+                    </p>
+                  )}
+                  {risks.length > 0 && (
+                    <p className="mt-0.5 text-xs text-rose-600">
+                      {risks.slice(0, 2).join(" · ")}
+                    </p>
+                  )}
+                </div>
+                <a
+                  href={job.applyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+                >
+                  Apply ↗
+                </a>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

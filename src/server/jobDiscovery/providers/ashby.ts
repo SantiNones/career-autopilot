@@ -1,83 +1,62 @@
-import type { DiscoveredJob, JobProvider } from "../types";
+import type { CompanySource } from "@prisma/client";
+
+import { stripHtml, type DiscoveredJob, type JobProvider } from "../types";
 
 interface AshbyJob {
   id: string;
   title: string;
-  locationName: string;
-  departmentName: string;
-  descriptionHtml: string;
-  employmentType: string;
-  isRemote: boolean;
-  jobPostingUrl: string;
-  publishedAt: string;
+  locationName?: string;
+  location?: string;
+  departmentName?: string;
+  descriptionHtml?: string;
+  descriptionPlain?: string;
+  employmentType?: string;
+  isRemote?: boolean;
+  jobUrl?: string;
+  applyUrl?: string;
+  jobPostingUrl?: string;
+  publishedAt?: string;
 }
 
 interface AshbyResponse {
   jobs: AshbyJob[];
 }
 
-export class AshbyProvider implements JobProvider {
-  name = "ashby";
+export const ashbyProvider: JobProvider = {
+  provider: "ashby",
 
-  private companies = [
-    { id: "ashby", name: "Ashby" },
-    { id: "linear", name: "Linear" },
-    { id: "vercel", name: "Vercel" },
-    { id: "supabase", name: "Supabase" },
-    { id: "mercury", name: "Mercury" },
-    { id: "retool", name: "Retool" },
-    { id: "fountain", name: "Fountain" },
-    { id: "descript", name: "Descript" },
-    { id: "ramp", name: "Ramp" },
-    { id: "warp", name: "Warp" },
-  ];
+  async fetchJobs(source: CompanySource): Promise<DiscoveredJob[]> {
+    const slug = source.providerSlug;
+    const response = await fetch(
+      `https://api.ashbyhq.com/posting-api/job-board/${slug}?includeCompensation=false`,
+      { headers: { Accept: "application/json" } }
+    );
 
-  async fetchJobs(): Promise<DiscoveredJob[]> {
-    const allJobs: DiscoveredJob[] = [];
-
-    for (const company of this.companies) {
-      try {
-        const response = await fetch(
-          `https://api.ashbyhq.com/posting-api/job-board/${company.id}`,
-          {
-            headers: {
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          console.log(`[discovery] ashby/${company.id}: skipped (status ${response.status})`);
-          continue;
-        }
-
-        const data: AshbyResponse = await response.json();
-
-        const jobs = data.jobs.map((job): DiscoveredJob => ({
-          title: job.title,
-          company: company.name,
-          location: job.isRemote ? "Remote" : (job.locationName || "Not specified"),
-          description: this.extractDescription(job.descriptionHtml),
-          applyUrl: job.jobPostingUrl,
-          source: `ashby:${company.id}`,
-        }));
-
-        allJobs.push(...jobs);
-        console.log(`[discovery] ashby/${company.id}: fetched ${jobs.length} jobs`);
-      } catch (error) {
-        console.log(`[discovery] ashby/${company.id}: error - ${error instanceof Error ? error.message : "unknown"}`);
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
 
-    console.log(`[discovery] ashby: total fetched ${allJobs.length}`);
-    return allJobs;
-  }
+    const data: AshbyResponse = await response.json();
 
-  private extractDescription(html: string): string {
-    return html
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 2000);
-  }
-}
+    return (data.jobs ?? []).map((job): DiscoveredJob => {
+      const location = job.isRemote
+        ? "Remote"
+        : job.location || job.locationName || "Not specified";
+      const applyUrl =
+        job.applyUrl || job.jobUrl || job.jobPostingUrl || "";
+
+      return {
+        title: job.title,
+        company: source.companyName,
+        location,
+        description: (job.descriptionPlain ?? stripHtml(job.descriptionHtml ?? "")).slice(0, 4000),
+        applyUrl,
+        source: `ashby:${slug}`,
+        provider: "ashby",
+        providerSlug: slug,
+        externalId: job.id,
+        postedAt: job.publishedAt ? new Date(job.publishedAt) : null,
+      };
+    });
+  },
+};
