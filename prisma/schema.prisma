@@ -7,8 +7,274 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model UserProfile {
+  id           String                @id @default(cuid())
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  fullName     String?
+  headline     String?
+  location     String?
+  languages    Json?
+  email        String?
+  githubUrl    String?
+  linkedinUrl  String?
+  phone        String?
+  portfolioUrl String?
+  preferences  CandidatePreferences?
+}
+
+model CandidatePreferences {
+  id                   String      @id @default(cuid())
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  userProfileId        String      @unique
+  targetTitles         Json?
+  positiveKeywords     Json?
+  negativeKeywords     Json?
+  minNetEurPerMonth    Int?
+  preferredCountries   Json?
+  preferredCities      Json?
+  preferredWorkMode    String?
+  targetSeniority      String?
+  allowedSeniorities   Json?
+  excludedCountries    Json?
+  excludedRoleKeywords Json?
+  maxOnsiteDistanceKm  Int?
+  openToRelocation     Boolean     @default(false)
+  preferredLocations   Json?
+  remotePreference     String?
+  targetRoleKeywords   Json?
+  userProfile          UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+}
+
+model JobPosting {
+  id                 String              @id @default(cuid())
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  source             String?
+  sourceUrl          String              @unique
+  companyName        String?
+  title              String?
+  location           String?
+  workMode           String?
+  language           String?
+  salaryText         String?
+  salaryMinEur       Int?
+  salaryMaxEur       Int?
+  currency           String?
+  postedAt           DateTime?
+  scrapedAt          DateTime?
+  rawHtml            String?
+  rawText            String?
+  parsedJson         Json?
+  status             JobStatus           @default(SOURCED)
+  applicationStatus  ApplicationStatus   @default(DISCOVERED)
+  applications       Application[]
+  fitAnalysis        FitAnalysis?
+  evaluations        JobEvaluation[]
+  materials          JobMaterial[]
+  positioningProfile PositioningProfile?
+}
+
+model JobEvaluation {
+  id                  String     @id @default(cuid())
+  createdAt           DateTime   @default(now())
+  jobPostingId        String
+  label               JobLabel
+  totalScore          Int
+  discoveryScore      Int        @default(0)
+  fitScore            Int        @default(0)
+  positionabilityScore Int      @default(0)
+  finalVerdict        String     @default("SKIP")
+  seniorityFit        Int
+  stackFit            Int
+  domainFit           Int
+  languageFit         Int
+  geographyFit        Int
+  salaryFit           Int
+  screeningFit        Int
+  honestyFit          Int
+  effortReward        Int
+  strategicValue      Int
+  reasons             Json?
+  risks               Json?
+  gaps                Json?
+  fitReasons          Json?
+  fitRisks            Json?
+  fitGaps             Json?
+  fitBreakdown        Json?
+  narrativeSuggestion String?
+  llmModel            String?
+  llmPromptVersion    String?
+  jobPosting          JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+}
+
+model Application {
+  id           String                @id @default(cuid())
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  jobPostingId String
+  status       String
+  appliedAt    DateTime?
+  notes        String?
+  jobPosting   JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  materials    ApplicationMaterial[]
+}
+
+model ApplicationMaterial {
+  id            String      @id @default(cuid())
+  createdAt     DateTime    @default(now())
+  applicationId String
+  type          String
+  content       String?
+  version       Int         @default(1)
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model JobMaterial {
+  id           String         @id @default(cuid())
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  jobPostingId String
+  type         MaterialType
+  content      String?
+  version      Int            @default(1)
+  status       MaterialStatus @default(DRAFT)
+  jobPosting   JobPosting     @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+}
+
+model FitAnalysis {
+  id                String     @id @default(cuid())
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  jobPostingId      String     @unique
+  strengths         Json
+  gaps              Json
+  matchingSkills    Json
+  matchingProjects  Json
+  recommendedAngle  String
+  companyType       String
+  jobFocus          String
+  seniorityDetected String
+  confidenceScore   Int
+  jobPosting        JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+}
+
+model ResumeMaster {
+  id                String             @id @default(cuid())
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  rawText           String?
+  summary           String?
+  experience        String?
+  projects          String?
+  skills            String?
+  education         String?
+  languages         String?
+  links             String?
+  experienceInsight ExperienceInsight?
+}
+
+model ExperienceInsight {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  resumeMasterId String       @unique
+  insights       Json
+  resumeMaster   ResumeMaster @relation(fields: [resumeMasterId], references: [id], onDelete: Cascade)
+}
+
+model AutomationRun {
+  id        String          @id @default(cuid())
+  createdAt DateTime        @default(now())
+  type      String
+  status    String
+  startedAt DateTime?
+  endedAt   DateTime?
+  logs      AutomationLog[]
+}
+
+model AutomationLog {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+  runId     String
+  level     String
+  message   String
+  data      Json?
+  run       AutomationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model PositioningProfile {
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  jobPostingId String     @unique
+  profile      Json
+  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+}
+
+model CompanySource {
+  id           String            @id @default(cuid())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  companyName  String
+  provider     DiscoveryProvider
+  providerSlug String
+  enabled      Boolean           @default(true)
+  priority     Int               @default(0)
+
+  @@unique([provider, providerSlug])
+}
+
+model RecommendedJob {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  title            String
+  company          String
+  location         String?
+  description      String?
+  applyUrl         String
+  source           String
+  provider         String
+  providerSlug     String
+  externalId       String?
+  matchScore       Int      @default(0)
+  label            String?
+  reasons          Json?
+  risks            Json?
+  gaps             Json?
+  discoveredAt     DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+  createdJobId     String?
+  baseScore        Int      @default(0)
+  finalScore       Int      @default(0)
+  discoveryScore   Int      @default(0)
+  fitScore         Int      @default(0)
+  positionabilityScore Int  @default(0)
+  finalVerdict     String   @default("SKIP")
+  fitReasons       Json?
+  fitRisks         Json?
+  fitGaps          Json?
+  fitBreakdown     Json?
+  locationCategory String?
+  locationEligible Boolean  @default(false)
+  seniorityAllowed Boolean  @default(false)
+  seniorityLevel   String?
+  roleFamily       String?
+  isTargetRole     Boolean  @default(false)
+  queryMatch       Boolean  @default(false)
+
+  @@unique([provider, externalId])
+  @@index([matchScore])
+  @@index([provider])
+  @@index([locationEligible])
+  @@index([seniorityAllowed])
+}
+
 enum JobLabel {
   APPLY
+  APPLY_STRETCH
   MAYBE
   SKIP
 }
@@ -35,135 +301,6 @@ enum JobStatus {
   REJECTED
 }
 
-model UserProfile {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  fullName     String?
-  headline     String?
-  location     String?
-  phone        String?
-  email        String?
-  linkedinUrl  String?
-  githubUrl    String?
-  portfolioUrl String?
-  languages    Json?
-
-  preferences CandidatePreferences?
-}
-
-model CandidatePreferences {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  userProfileId String @unique
-  userProfile   UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
-
-  targetTitles     Json?
-  positiveKeywords Json?
-  negativeKeywords Json?
-
-  minNetEurPerMonth Int?
-  preferredCountries Json?
-  preferredCities    Json?
-  preferredWorkMode  String?
-  targetSeniority    String?
-}
-
-model JobPosting {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  source      String?
-  sourceUrl   String   @unique
-  companyName String?
-  title       String?
-  location    String?
-  workMode    String?
-  language    String?
-
-  salaryText  String?
-  salaryMinEur Int?
-  salaryMaxEur Int?
-  currency    String?
-
-  postedAt    DateTime?
-  scrapedAt   DateTime?
-
-  rawHtml     String?
-  rawText     String?
-  parsedJson  Json?
-
-  status            JobStatus         @default(SOURCED)
-  applicationStatus ApplicationStatus @default(DISCOVERED)
-
-  evaluations  JobEvaluation[]
-  applications Application[]
-  materials    JobMaterial[]
-  fitAnalysis  FitAnalysis?
-  positioningProfile PositioningProfile?
-}
-
-model JobEvaluation {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  jobPostingId String
-  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-
-  label       JobLabel
-  totalScore  Int
-
-  seniorityFit   Int
-  stackFit       Int
-  domainFit      Int
-  languageFit    Int
-  geographyFit   Int
-  salaryFit      Int
-  screeningFit   Int
-  honestyFit     Int
-  effortReward   Int
-  strategicValue Int
-
-  reasons Json?
-  risks   Json?
-  gaps    Json?
-  narrativeSuggestion String?
-
-  llmModel String?
-  llmPromptVersion String?
-}
-
-model Application {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  jobPostingId String
-  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-
-  status     String
-  appliedAt  DateTime?
-  notes      String?
-
-  materials  ApplicationMaterial[]
-}
-
-model ApplicationMaterial {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  type     String
-  content  String?
-  version  Int @default(1)
-}
-
 enum MaterialType {
   TAILORED_CV
   COVER_LETTER
@@ -176,149 +313,8 @@ enum MaterialStatus {
   REVIEWED
 }
 
-model JobMaterial {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  jobPostingId String
-  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-
-  type    MaterialType
-  content String?
-  version Int          @default(1)
-  status  MaterialStatus @default(DRAFT)
-}
-
-model FitAnalysis {
-  id           String   @id @default(cuid())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  jobPostingId String     @unique
-  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-
-  strengths        Json
-  gaps             Json
-  matchingSkills   Json
-  matchingProjects Json
-
-  recommendedAngle  String
-  companyType       String
-  jobFocus          String
-  seniorityDetected String
-
-  confidenceScore Int
-}
-
-model ResumeMaster {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  rawText    String?
-  summary    String?
-  experience String?
-  projects   String?
-  skills     String?
-  education  String?
-  languages  String?
-  links      String?
-
-  experienceInsight ExperienceInsight?
-}
-
-model ExperienceInsight {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  resumeMasterId String       @unique
-  resumeMaster   ResumeMaster @relation(fields: [resumeMasterId], references: [id], onDelete: Cascade)
-
-  insights Json
-}
-
-model AutomationRun {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  type      String
-  status    String
-  startedAt DateTime?
-  endedAt   DateTime?
-
-  logs AutomationLog[]
-}
-
-model AutomationLog {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  runId String
-  run   AutomationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  level   String
-  message String
-  data    Json?
-}
-
-model PositioningProfile {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  jobPostingId String     @unique
-  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-
-  profile Json
-}
-
 enum DiscoveryProvider {
   GREENHOUSE
   LEVER
   ASHBY
-}
-
-model CompanySource {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  companyName  String
-  provider     DiscoveryProvider
-  providerSlug String
-  enabled      Boolean @default(true)
-  priority     Int     @default(0)
-
-  @@unique([provider, providerSlug])
-}
-
-model RecommendedJob {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  title       String
-  company     String
-  location    String?
-  description String?
-  applyUrl    String
-  source      String
-  provider    String
-  providerSlug String
-  externalId  String?
-
-  matchScore Int     @default(0)
-  label      String?
-  reasons    Json?
-  risks      Json?
-  gaps       Json?
-
-  discoveredAt DateTime @default(now())
-  lastSeenAt   DateTime @default(now())
-
-  @@unique([provider, externalId])
-  @@index([matchScore])
-  @@index([provider])
 }
