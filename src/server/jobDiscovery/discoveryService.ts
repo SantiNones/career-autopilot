@@ -1,7 +1,7 @@
-import type { CompanySource } from "@prisma/client";
+import type { DiscoveryProvider, CompanySource } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { scoreJob } from "../jobScoring";
+import { discoveryScoreJob } from "./discoveryScoring";
 import { greenhouseProvider, leverProvider, ashbyProvider } from "./providers";
 import type { DiscoveredJob, DiscoverySummary, JobProvider } from "./types";
 
@@ -19,6 +19,25 @@ type ScoredJob = DiscoveredJob & {
   reasons: string[];
   risks: string[];
   gaps: string[];
+  locationCategory?: string;
+  locationEligible?: boolean;
+  seniorityLevel?: string;
+  seniorityAllowed?: boolean;
+  roleFamily?: string | null;
+  isTargetRole?: boolean;
+  queryMatch?: boolean;
+  baseScore?: number;
+  finalScore?: number;
+  // V2 Scoring Fields
+  discoveryScore?: number;
+  fitScore?: number;
+  positionabilityScore?: number;
+  finalVerdict?: string;
+  fitReasons?: string[];
+  fitRisks?: string[];
+  fitGaps?: string[];
+  fitBreakdown?: any;
+  positionabilityBreakdown?: any;
 };
 
 function providerDisplayName(provider: string): string {
@@ -48,7 +67,7 @@ function deduplicate(jobs: DiscoveredJob[]): DiscoveredJob[] {
   return Array.from(seen.values());
 }
 
-export async function runDiscovery(): Promise<DiscoverySummary> {
+export async function runDiscovery(query?: string): Promise<DiscoverySummary> {
   console.log("[discovery] starting discovery run...");
 
   // 1. Load enabled company sources
@@ -100,18 +119,46 @@ export async function runDiscovery(): Promise<DiscoverySummary> {
   });
 
   const scoredJobs: ScoredJob[] = uniqueJobs.map((job) => {
-    const text = [job.title, job.company, job.location, job.description]
-      .filter(Boolean)
-      .join("\n");
-    const score = scoreJob(text, prefs);
-    return {
-      ...job,
-      matchScore: score.totalScore,
-      label: score.label,
-      reasons: score.reasons,
-      risks: score.risks,
-      gaps: score.gaps,
-    };
+    try {
+      const score = discoveryScoreJob(job, prefs, query);
+      return {
+        ...job,
+        matchScore: score.matchScore,
+        label: score.label,
+        reasons: score.reasons,
+        risks: score.risks,
+        gaps: score.gaps,
+        locationCategory: score.locationEligibility.category,
+        locationEligible: score.locationEligibility.eligible,
+        seniorityLevel: score.seniorityClassification.level,
+        seniorityAllowed: score.seniorityClassification.allowed,
+        roleFamily: score.roleIntent?.roleFamily || null,
+        isTargetRole: score.roleIntent?.isTargetRole || false,
+        queryMatch: score.queryMatch?.matches || false,
+        baseScore: score.baseScore,
+        finalScore: score.finalScore,
+      };
+    } catch (error) {
+      console.error(`[discovery] scoring failed for job: ${job.title} at ${job.company}`, error);
+      // Return a basic scored job to prevent complete failure
+      return {
+        ...job,
+        matchScore: 0,
+        label: "SKIP",
+        reasons: ["Scoring failed"],
+        risks: ["Scoring error"],
+        gaps: [],
+        locationCategory: "unknown",
+        locationEligible: false,
+        seniorityLevel: "unknown",
+        seniorityAllowed: false,
+        roleFamily: null,
+        isTargetRole: false,
+        queryMatch: false,
+        baseScore: 0,
+        finalScore: 0,
+      };
+    }
   });
 
   // 5. Sort by score, take top N
@@ -125,6 +172,9 @@ export async function runDiscovery(): Promise<DiscoverySummary> {
 
   for (const job of topJobs) {
     try {
+      console.log(`[discovery] attempting to save job: ${job.title} at ${job.company} (score: ${job.matchScore})`);
+      
+      // Use V1.2 fields for now - V2 fields calculated but not persisted
       const data = {
         title: job.title,
         company: job.company,
@@ -136,14 +186,21 @@ export async function runDiscovery(): Promise<DiscoverySummary> {
         providerSlug: job.providerSlug,
         externalId: job.externalId ?? null,
         matchScore: job.matchScore,
-        label: job.label,
+        label: job.finalVerdict || job.label, // Use V2 final verdict if available
         reasons: job.reasons,
         risks: job.risks,
         gaps: job.gaps,
+        locationCategory: job.locationCategory,
+        locationEligible: job.locationEligible,
+        seniorityLevel: job.seniorityLevel,
+        seniorityAllowed: job.seniorityAllowed,
+        baseScore: job.baseScore,
+        finalScore: job.finalScore,
         lastSeenAt: now,
       };
 
       if (job.externalId) {
+        console.log(`[discovery] upserting job with externalId: ${job.externalId}`);
         await prisma.recommendedJob.upsert({
           where: {
             provider_externalId: {
@@ -154,21 +211,29 @@ export async function runDiscovery(): Promise<DiscoverySummary> {
           create: data,
           update: data,
         });
+        console.log(`[discovery] upsert successful`);
       } else {
-        // Fallback dedupe: company + title + location
-        const existing = await prisma.recommendedJob.findFirst({
-          where: { company: job.company, title: job.title, location: job.location },
-        });
-        if (existing) {
-          await prisma.recommendedJob.update({ where: { id: existing.id }, data });
-        } else {
-          await prisma.recommendedJob.create({ data });
-        }
+        console.log(`[discovery] creating job without externalId`);
+        await prisma.recommendedJob.create({ data });
+        console.log(`[discovery] create successful`);
       }
       jobsSaved += 1;
+      console.log(`[discovery] successfully saved job: ${job.title} at ${job.company}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
-      console.log(`[discovery] save failed: ${job.company} / ${job.title} / ${message}`);
+      console.error(`[discovery] save failed: ${job.company} / ${job.title} / ${message}`);
+      console.error(`[discovery] error stack:`, error instanceof Error ? error.stack : 'No stack trace');
+      console.error(`[discovery] job data:`, JSON.stringify({
+        title: job.title,
+        company: job.company,
+        roleFamily: job.roleFamily,
+        isTargetRole: job.isTargetRole,
+        queryMatch: job.queryMatch,
+        locationCategory: job.locationCategory,
+        locationEligible: job.locationEligible,
+        seniorityLevel: job.seniorityLevel,
+        seniorityAllowed: job.seniorityAllowed
+      }, null, 2));
     }
   }
 
@@ -207,6 +272,30 @@ export const DEFAULT_COMPANY_SOURCES: Array<
   { companyName: "Retool", provider: "ASHBY", providerSlug: "retool" },
   { companyName: "Ramp", provider: "ASHBY", providerSlug: "ramp" },
   { companyName: "Warp", provider: "ASHBY", providerSlug: "warp" },
+  
+  // Spain/Europe Company Sources
+  { companyName: "TravelPerk", provider: "GREENHOUSE", providerSlug: "travelperk" },
+  { companyName: "Typeform", provider: "GREENHOUSE", providerSlug: "typeform" },
+  { companyName: "Factorial", provider: "GREENHOUSE", providerSlug: "factorialhr" },
+  { companyName: "Glovo", provider: "GREENHOUSE", providerSlug: "glovo" },
+  { companyName: "Wallapop", provider: "GREENHOUSE", providerSlug: "wallapop" },
+  { companyName: "GetYourGuide", provider: "GREENHOUSE", providerSlug: "getyourguide" },
+  { companyName: "N26", provider: "GREENHOUSE", providerSlug: "n26" },
+  { companyName: "Trade Republic", provider: "GREENHOUSE", providerSlug: "trade-republic" },
+  { companyName: "Personio", provider: "GREENHOUSE", providerSlug: "personio" },
+  { companyName: "Babbel", provider: "GREENHOUSE", providerSlug: "babbel" },
+  { companyName: "Sennder", provider: "GREENHOUSE", providerSlug: "sennder" },
+  { companyName: "Thoughtworks", provider: "GREENHOUSE", providerSlug: "thoughtworks" },
+  { companyName: "Canonical", provider: "GREENHOUSE", providerSlug: "canonical" },
+  { companyName: "Automattic", provider: "GREENHOUSE", providerSlug: "automattic" },
+  { companyName: "Remote", provider: "GREENHOUSE", providerSlug: "remote-com" },
+  { companyName: "Oyster", provider: "GREENHOUSE", providerSlug: "oysterhr" },
+  { companyName: "Deel", provider: "GREENHOUSE", providerSlug: "deel" },
+  { companyName: "Hotjar", provider: "GREENHOUSE", providerSlug: "hotjar" },
+  { companyName: "Malt", provider: "GREENHOUSE", providerSlug: "malt" },
+  { companyName: "Qonto", provider: "GREENHOUSE", providerSlug: "qonto" },
+  { companyName: "Algolia", provider: "GREENHOUSE", providerSlug: "algolia" },
+  { companyName: "Contentsquare", provider: "GREENHOUSE", providerSlug: "contentsquare" },
   // Lever (slugs verified against api.lever.co)
   { companyName: "Palantir", provider: "LEVER", providerSlug: "palantir" },
   { companyName: "Kraken", provider: "LEVER", providerSlug: "kraken" },
