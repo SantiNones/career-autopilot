@@ -49,6 +49,30 @@ You are a career intelligence analyst. Build a structured candidate model for ca
 
 DO NOT summarize the resume. Build a structured candidate model.
 
+SENIORITY CALIBRATION:
+- Do NOT infer "mid_level" from total work experience alone
+- Distinguish between total professional experience and technical professional experience
+- For candidates with strong non-tech work experience but limited professional engineering experience, use:
+  * careerStage: "career_transition" or "early_technical_career"
+- Use "mid_level" ONLY if candidate has multiple years of professional experience in the target technical field
+- Recognize project-based AI work as valid evidence
+
+AI EXPERIENCE CALIBRATION:
+- Projects with OpenAI, LLM workflows, agents, prompt engineering = valid AI experience
+- Do NOT output "limited exposure to OpenAI" for project-based AI work
+- Distinguish:
+  * OpenAI API: proven_project_experience
+  * LLM workflows: proven_project_experience
+  * Production AI team experience: limited
+  * Enterprise AI deployment: limited
+
+EVIDENCE LEVELS:
+- professional_experience: paid work in target field
+- proven_project_experience: completed projects with evidence
+- project_exposure: some project work
+- learning: actively learning
+- weak_or_missing: minimal or no experience
+
 CANDIDATE DATA:
 Resume Summary: ${resumeMaster.summary || 'Not provided'}
 Experience Insights: ${JSON.stringify(insights, null, 2)}
@@ -65,12 +89,12 @@ Optimization Priority: ${preferences?.optimizationPriority || 'Not specified'}
 
 ANALYZE and RETURN JSON with this exact structure:
 {
-  "careerStage": "student|early_career|career_transition|mid_level|senior",
+  "careerStage": "student|early_career|career_transition|early_technical_career|mid_level|senior",
   "careerDirection": "Natural language summary of career direction",
   "primaryRoleFamilies": ["best_fit_role_families_now"],
   "secondaryRoleFamilies": ["adjacent_or_stretched_role_families"],
   "technicalStack": {
-    "technology_name": "proven|project_exposure|learning|weak_or_missing"
+    "technology_name": "professional_experience|proven_project_experience|project_exposure|learning|weak_or_missing"
   },
   "technicalStrengths": ["key_technical_capabilities"],
   "transferableStrengths": ["skills_applicable_across_roles"],
@@ -102,10 +126,10 @@ ANALYZE and RETURN JSON with this exact structure:
 }
 
 Focus on:
-1. Career stage assessment based on experience level and trajectory
-2. Technical capabilities with evidence levels
-3. Project and experience evidence
-4. Honest assessment of strengths and risks
+1. Accurate career stage based on technical experience, not total work experience
+2. Technical capabilities with precise evidence levels
+3. Project-based AI work recognition
+4. Honest but precise risk areas (e.g., "Limited professional software engineering experience" not "Limited exposure to OpenAI")
 5. Career direction based on goals and capabilities
 `;
 
@@ -160,16 +184,16 @@ function generateFallbackCandidateIntelligence(
   console.log("[candidate-intelligence] Using fallback analysis");
 
   return {
-    careerStage: "early_career",
+    careerStage: "early_technical_career",
     careerDirection: preferences?.primaryCareerGoal || "Technical professional seeking growth opportunities",
     primaryRoleFamilies: preferences?.targetRoleFamilies || ["software_engineering"],
     secondaryRoleFamilies: ["technical_support", "fullstack_engineering"],
     technicalStack: {
-      "javascript": "proven",
-      "typescript": "proven",
+      "javascript": "proven_project_experience",
+      "typescript": "proven_project_experience",
       "python": "project_exposure",
-      "react": "proven",
-      "node.js": "proven"
+      "react": "proven_project_experience",
+      "node.js": "proven_project_experience"
     },
     technicalStrengths: ["Full-stack development", "JavaScript/TypeScript", "React", "Node.js"],
     transferableStrengths: ["Problem solving", "Communication", "Learning ability"],
@@ -179,7 +203,7 @@ function generateFallbackCandidateIntelligence(
     projectEvidence: [],
     experienceEvidence: [],
     positioningAssets: ["Technical skills", "Communication ability", "Learning mindset"],
-    riskAreas: ["Limited professional experience", "Need more specialized expertise"],
+    riskAreas: ["Limited professional software engineering experience", "Need more specialized expertise"],
     constraints: ["Based in Barcelona", "Prefers Spain/Europe/Remote Europe"],
     summary: "Technical professional with full-stack development skills seeking growth opportunities."
   };
