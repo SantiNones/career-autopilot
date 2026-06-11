@@ -115,6 +115,17 @@ export default async function Home() {
             label: j.label,
             reasons: j.reasons,
             risks: j.risks,
+            gaps: j.gaps,
+            description: j.description,
+            discoveredAt: j.discoveredAt?.toISOString(),
+            createdJobId: j.createdJobId,
+            // V1.2 Discovery fields
+            locationCategory: j.locationCategory,
+            locationEligible: j.locationEligible,
+            seniorityLevel: j.seniorityLevel,
+            seniorityAllowed: j.seniorityAllowed,
+            baseScore: j.baseScore,
+            finalScore: j.finalScore,
           }))}
         />
 

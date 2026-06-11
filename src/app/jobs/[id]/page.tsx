@@ -31,6 +31,7 @@ function ScorePill({ score }: { score: number }) {
 function LabelBadge({ label }: { label: string }) {
   const styles: Record<string, string> = {
     APPLY: "bg-emerald-100 text-emerald-800",
+    APPLY_STRETCH: "bg-blue-100 text-blue-800",
     MAYBE: "bg-amber-100 text-amber-800",
     SKIP: "bg-rose-100 text-rose-800",
   };
@@ -110,6 +111,19 @@ export default async function JobDetailPage(props: {
 
   const ev = job.evaluations[0] ?? null;
   const appStatus = job.applicationStatus as AppStatus;
+  
+  // Debug logging for V2 scoring verification
+  if (ev) {
+    console.log('[job-detail-score-debug]');
+    console.log('title:', job.title);
+    console.log('totalScore (fitScore):', ev.totalScore);
+    console.log('label (finalVerdict):', ev.label);
+    console.log('reasons (fitReasons):', ev.reasons);
+    console.log('risks (fitRisks):', ev.risks);
+    console.log('gaps (fitGaps):', ev.gaps);
+    console.log('narrativeSuggestion:', ev.narrativeSuggestion);
+    console.log('---');
+  }
   const hasMaterials = job.materials.length > 0;
   const parsed = job.parsedJson as unknown as Record<string, unknown> | null;
   const blocked = Boolean(parsed?.["blocked"]);
@@ -178,7 +192,7 @@ export default async function JobDetailPage(props: {
             <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
               {ev && (
                 <div className="flex flex-col items-end gap-0.5">
-                  <span className="text-xs text-zinc-400">Job Score</span>
+                  <span className="text-xs text-zinc-400">Fit Score</span>
                   <ScorePill score={ev.totalScore} />
                 </div>
               )}
@@ -342,16 +356,13 @@ export default async function JobDetailPage(props: {
             <h2 className="mb-4 text-sm font-semibold text-zinc-900">Score Breakdown</h2>
             {ev ? (
               <div className="flex flex-col gap-3">
-                <ScoreBar label="Seniority" value={ev.seniorityFit} />
-                <ScoreBar label="Stack" value={ev.stackFit} />
-                <ScoreBar label="Domain" value={ev.domainFit} />
-                <ScoreBar label="Language" value={ev.languageFit} />
-                <ScoreBar label="Geography" value={ev.geographyFit} />
-                <ScoreBar label="Salary" value={ev.salaryFit} />
-                <ScoreBar label="Screening" value={ev.screeningFit} />
-                <ScoreBar label="Honesty" value={ev.honestyFit} />
-                <ScoreBar label="Effort / Reward" value={ev.effortReward} />
-                <ScoreBar label="Strategic" value={ev.strategicValue} />
+                <ScoreBar label="Experience Fit" value={ev.seniorityFit} />
+                <ScoreBar label="Seniority Fit" value={ev.seniorityFit} />
+                <ScoreBar label="Stack Fit" value={ev.stackFit} />
+                <ScoreBar label="Domain Fit" value={ev.domainFit} />
+                <ScoreBar label="Geography Fit" value={ev.geographyFit} />
+                <ScoreBar label="Language Fit" value={ev.languageFit} />
+                <ScoreBar label="Honesty Fit" value={ev.honestyFit} />
               </div>
             ) : (
               <p className="text-sm text-zinc-400">No evaluation yet.</p>

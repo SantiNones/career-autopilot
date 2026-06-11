@@ -4,10 +4,15 @@ import { ensureCompanySources, runDiscovery } from "@/server/jobDiscovery/discov
 
 export const maxDuration = 120;
 
-export async function POST(): Promise<NextResponse> {
+export async function POST(request: Request): Promise<NextResponse> {
   try {
+    const body = await request.json().catch(() => ({}));
+    const { query } = body;
+    
+    console.log(`[discovery] run with query: ${query || 'none'}`);
+    
     await ensureCompanySources();
-    const summary = await runDiscovery();
+    const summary = await runDiscovery(query);
     return NextResponse.json({ success: true, ...summary });
   } catch (error) {
     console.error("[discovery] run failed:", error);

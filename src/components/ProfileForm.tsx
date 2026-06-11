@@ -11,6 +11,14 @@ type Preferences = {
   preferredCities: string[];
   preferredWorkMode: string | null;
   targetSeniority: string | null;
+  // Career Goals fields
+  primaryCareerGoal: string | null;
+  secondaryCareerGoals: string[];
+  targetRoleFamilies: string[];
+  acceptableSteppingStoneRoles: string[];
+  rolesToAvoid: string[];
+  careerHorizon: string | null;
+  optimizationPriority: string | null;
 };
 
 type Profile = {
@@ -73,6 +81,29 @@ export function ProfileForm(props: { initial: Profile }) {
     props.initial.preferences.targetSeniority ?? "",
   );
 
+  // Career Goals state variables
+  const [primaryCareerGoal, setPrimaryCareerGoal] = useState(
+    props.initial.preferences.primaryCareerGoal ?? "",
+  );
+  const [secondaryCareerGoals, setSecondaryCareerGoals] = useState(
+    joinLines(props.initial.preferences.secondaryCareerGoals ?? []),
+  );
+  const [targetRoleFamilies, setTargetRoleFamilies] = useState(
+    joinLines(props.initial.preferences.targetRoleFamilies ?? []),
+  );
+  const [acceptableSteppingStoneRoles, setAcceptableSteppingStoneRoles] = useState(
+    joinLines(props.initial.preferences.acceptableSteppingStoneRoles ?? []),
+  );
+  const [rolesToAvoid, setRolesToAvoid] = useState(
+    joinLines(props.initial.preferences.rolesToAvoid ?? []),
+  );
+  const [careerHorizon, setCareerHorizon] = useState(
+    props.initial.preferences.careerHorizon ?? "",
+  );
+  const [optimizationPriority, setOptimizationPriority] = useState(
+    props.initial.preferences.optimizationPriority ?? "",
+  );
+
   const payload = useMemo(() => {
     const min = minNet.trim() ? Number(minNet) : null;
     return {
@@ -94,6 +125,14 @@ export function ProfileForm(props: { initial: Profile }) {
         preferredCities: splitLines(preferredCities),
         preferredWorkMode: preferredWorkMode.trim() || null,
         targetSeniority: targetSeniority.trim() || null,
+        // Career Goals fields
+        primaryCareerGoal: primaryCareerGoal.trim() || null,
+        secondaryCareerGoals: splitLines(secondaryCareerGoals),
+        targetRoleFamilies: splitLines(targetRoleFamilies),
+        acceptableSteppingStoneRoles: splitLines(acceptableSteppingStoneRoles),
+        rolesToAvoid: splitLines(rolesToAvoid),
+        careerHorizon: careerHorizon.trim() || null,
+        optimizationPriority: optimizationPriority.trim() || null,
       },
     };
   }, [
@@ -114,6 +153,14 @@ export function ProfileForm(props: { initial: Profile }) {
     preferredCities,
     preferredWorkMode,
     targetSeniority,
+    // Career Goals dependencies
+    primaryCareerGoal,
+    secondaryCareerGoals,
+    targetRoleFamilies,
+    acceptableSteppingStoneRoles,
+    rolesToAvoid,
+    careerHorizon,
+    optimizationPriority,
   ]);
 
   const [saving, setSaving] = useState(false);
@@ -316,6 +363,82 @@ export function ProfileForm(props: { initial: Profile }) {
         value={preferredCities}
         onChange={setPreferredCities}
       />
+
+      <div>
+        <h3 className="mb-3 text-sm font-semibold text-zinc-700">Career Goals</h3>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Primary Career Goal</label>
+            <input
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={primaryCareerGoal}
+              onChange={(e) => setPrimaryCareerGoal(e.target.value)}
+              placeholder="e.g. Become an AI-focused engineer building practical automation and agentic systems"
+            />
+          </div>
+          
+          <TextArea
+            label="Secondary Career Goals (one per line)"
+            value={secondaryCareerGoals}
+            onChange={setSecondaryCareerGoals}
+            hint="Alternative career paths or backup options"
+          />
+          
+          <TextArea
+            label="Target Role Families (one per line)"
+            value={targetRoleFamilies}
+            onChange={setTargetRoleFamilies}
+            hint="e.g. ai_engineering, solutions_engineering, fullstack_engineering"
+          />
+          
+          <TextArea
+            label="Acceptable Stepping Stone Roles (one per line)"
+            value={acceptableSteppingStoneRoles}
+            onChange={setAcceptableSteppingStoneRoles}
+            hint="Roles that could lead to your primary goal"
+          />
+          
+          <TextArea
+            label="Roles to Avoid (one per line)"
+            value={rolesToAvoid}
+            onChange={setRolesToAvoid}
+            hint="Roles you definitely don't want"
+          />
+          
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Career Horizon</label>
+            <select
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={careerHorizon}
+              onChange={(e) => setCareerHorizon(e.target.value)}
+            >
+              <option value="">Select timeframe</option>
+              <option value="immediate">Immediate (0-3 months)</option>
+              <option value="6_months">6 months</option>
+              <option value="12_months">12 months</option>
+              <option value="2_3_years">2-3 years</option>
+            </select>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-zinc-900">Optimization Priority</label>
+            <select
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+              value={optimizationPriority}
+              onChange={(e) => setOptimizationPriority(e.target.value)}
+            >
+              <option value="">Select priority</option>
+              <option value="salary">Salary</option>
+              <option value="learning">Learning</option>
+              <option value="speed_to_job">Speed to job</option>
+              <option value="remote_work">Remote work</option>
+              <option value="prestige">Prestige</option>
+              <option value="career_direction">Career direction</option>
+              <option value="balanced">Balanced</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center gap-3">
         <button

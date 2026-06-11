@@ -8,43 +8,52 @@ datasource db {
 }
 
 model UserProfile {
-  id           String                @id @default(cuid())
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  fullName     String?
-  headline     String?
-  location     String?
-  languages    Json?
-  email        String?
-  githubUrl    String?
-  linkedinUrl  String?
-  phone        String?
-  portfolioUrl String?
-  preferences  CandidatePreferences?
+  id                    String                @id @default(cuid())
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  fullName              String?
+  headline              String?
+  location              String?
+  languages             Json?
+  email                 String?
+  githubUrl             String?
+  linkedinUrl           String?
+  phone                 String?
+  portfolioUrl          String?
+  preferences           CandidatePreferences?
+  candidateIntelligence CandidateIntelligence?
 }
 
 model CandidatePreferences {
-  id                   String      @id @default(cuid())
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
-  userProfileId        String      @unique
-  targetTitles         Json?
-  positiveKeywords     Json?
-  negativeKeywords     Json?
-  minNetEurPerMonth    Int?
-  preferredCountries   Json?
-  preferredCities      Json?
-  preferredWorkMode    String?
-  targetSeniority      String?
-  allowedSeniorities   Json?
-  excludedCountries    Json?
-  excludedRoleKeywords Json?
-  maxOnsiteDistanceKm  Int?
-  openToRelocation     Boolean     @default(false)
-  preferredLocations   Json?
-  remotePreference     String?
-  targetRoleKeywords   Json?
-  userProfile          UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+  id                         String      @id @default(cuid())
+  createdAt                  DateTime    @default(now())
+  updatedAt                  DateTime    @updatedAt
+  userProfileId              String      @unique
+  targetTitles               Json?
+  positiveKeywords           Json?
+  negativeKeywords           Json?
+  minNetEurPerMonth          Int?
+  preferredCountries         Json?
+  preferredCities            Json?
+  preferredWorkMode          String?
+  targetSeniority            String?
+  allowedSeniorities         Json?
+  excludedCountries          Json?
+  excludedRoleKeywords       Json?
+  maxOnsiteDistanceKm        Int?
+  openToRelocation           Boolean     @default(false)
+  preferredLocations         Json?
+  remotePreference           String?
+  targetRoleKeywords         Json?
+  // Career Goals fields
+  primaryCareerGoal          String?
+  secondaryCareerGoals       Json?
+  targetRoleFamilies         Json?
+  acceptableSteppingStoneRoles Json?
+  rolesToAvoid               Json?
+  careerHorizon              String?
+  optimizationPriority       String?
+  userProfile                UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
 }
 
 model JobPosting {
@@ -182,6 +191,31 @@ model ExperienceInsight {
   resumeMasterId String       @unique
   insights       Json
   resumeMaster   ResumeMaster @relation(fields: [resumeMasterId], references: [id], onDelete: Cascade)
+}
+
+model CandidateIntelligence {
+  id                   String             @id @default(cuid())
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  analyzedAt           DateTime?
+  userProfileId        String             @unique
+  careerStage          String?
+  careerDirection      String?
+  primaryRoleFamilies  Json?
+  secondaryRoleFamilies Json?
+  technicalStack       Json?
+  technicalStrengths   Json?
+  transferableStrengths Json?
+  domains              Json?
+  languages            Json?
+  educationSignals     Json?
+  projectEvidence      Json?
+  experienceEvidence   Json?
+  positioningAssets    Json?
+  riskAreas            Json?
+  constraints          Json?
+  summary              String?
+  userProfile          UserProfile        @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
 }
 
 model AutomationRun {

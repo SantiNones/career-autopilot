@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { MasterResumeForm } from "@/components/MasterResumeForm";
 import { ProfileForm } from "@/components/ProfileForm";
 import { ExperienceIntelligencePanel } from "@/components/ExperienceIntelligencePanel";
+import { CandidateIntelligencePanel } from "@/components/CandidateIntelligencePanel";
 
 function NavBar() {
   return (
@@ -99,6 +100,18 @@ export default async function ProfilePage() {
                     (prefs.preferredCities as unknown as string[]) ?? [],
                   preferredWorkMode: prefs.preferredWorkMode,
                   targetSeniority: prefs.targetSeniority,
+                  // Career Goals fields
+                  primaryCareerGoal: prefs.primaryCareerGoal,
+                  secondaryCareerGoals:
+                    (prefs.secondaryCareerGoals as unknown as string[]) ?? [],
+                  targetRoleFamilies:
+                    (prefs.targetRoleFamilies as unknown as string[]) ?? [],
+                  acceptableSteppingStoneRoles:
+                    (prefs.acceptableSteppingStoneRoles as unknown as string[]) ?? [],
+                  rolesToAvoid:
+                    (prefs.rolesToAvoid as unknown as string[]) ?? [],
+                  careerHorizon: prefs.careerHorizon,
+                  optimizationPriority: prefs.optimizationPriority,
                 },
               }}
             />
@@ -121,6 +134,16 @@ export default async function ProfilePage() {
             </div>
             <div className="rounded-xl border border-zinc-200 bg-white p-6">
               <ExperienceIntelligencePanel />
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-zinc-900">Candidate Intelligence</h2>
+              <p className="mt-0.5 text-sm text-zinc-500">Structured candidate model for career matching and positioning.</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-6">
+              <CandidateIntelligencePanel />
             </div>
           </div>
         </main>
@@ -162,6 +185,18 @@ export default async function ProfilePage() {
                   (profile.preferences.preferredCities as unknown as string[]) ?? [],
                 preferredWorkMode: profile.preferences.preferredWorkMode,
                 targetSeniority: profile.preferences.targetSeniority,
+                // Career Goals fields
+                primaryCareerGoal: profile.preferences.primaryCareerGoal,
+                secondaryCareerGoals:
+                  (profile.preferences.secondaryCareerGoals as unknown as string[]) ?? [],
+                targetRoleFamilies:
+                  (profile.preferences.targetRoleFamilies as unknown as string[]) ?? [],
+                acceptableSteppingStoneRoles:
+                  (profile.preferences.acceptableSteppingStoneRoles as unknown as string[]) ?? [],
+                rolesToAvoid:
+                  (profile.preferences.rolesToAvoid as unknown as string[]) ?? [],
+                careerHorizon: profile.preferences.careerHorizon,
+                optimizationPriority: profile.preferences.optimizationPriority,
               },
             }}
           />

@@ -64,6 +64,12 @@ const JUNIOR_TITLE_SIGNALS = [
   "intern", "internship", "trainee", "apprentice", "fresher",
 ];
 
+const SENIOR_TITLE_SIGNALS = [
+  "senior", "sr.", " sr ", "lead", "principal", "staff", "head of",
+  "director", "vp", "vice president", "manager", "architect",
+  "chief", "cto", "cfo", "ceo", "c-level", "c-level executive",
+];
+
 function looksBlockedOrLowValue(text: string): { blocked: boolean; reason: string | null } {
   const t = text.toLowerCase();
   const short = text.trim().length < 800;
@@ -100,12 +106,17 @@ export function scoreJob(text: string, prefs: CandidatePreferences | null): JobS
 
   const years = extractRequiredYears(text);
 
-  // Check first 5 lines for explicit junior/entry-level signals — these override year-based scoring.
+  // Check first 5 lines for explicit junior/entry-level and senior signals
   const titleArea = text.split(/\n/).slice(0, 5).join(" ").toLowerCase();
   const isExplicitlyJunior = JUNIOR_TITLE_SIGNALS.some((s) => titleArea.includes(s));
+  const isExplicitlySenior = SENIOR_TITLE_SIGNALS.some((s) => titleArea.includes(s));
 
   let seniorityFit = 70;
-  if (isExplicitlyJunior) {
+  if (isExplicitlySenior) {
+    // Senior signals override junior signals - prevent senior roles from getting junior treatment
+    seniorityFit = 10;
+    risks.push("Role explicitly targets senior/experienced candidates");
+  } else if (isExplicitlyJunior) {
     seniorityFit = 90;
     reasons.push("Role explicitly targets junior/entry-level candidates");
   } else if (years !== null) {
@@ -130,7 +141,9 @@ export function scoreJob(text: string, prefs: CandidatePreferences | null): JobS
   const geographyFit = 60;
   const salaryFit = 50;
   const screeningFit = clamp(60 + pos * 6 - neg * 5);
-  const honestyFit = isExplicitlyJunior
+  const honestyFit = isExplicitlySenior
+    ? 20  // Low honesty fit for senior roles when candidate is junior
+    : isExplicitlyJunior
     ? 80
     : clamp(65 - Math.max(0, (years ?? 0) - 2) * 15);
   if (honestyFit < 40) gaps.push("Experience gap vs requirements");

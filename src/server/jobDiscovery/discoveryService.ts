@@ -137,6 +137,16 @@ export async function runDiscovery(query?: string): Promise<DiscoverySummary> {
         queryMatch: score.queryMatch?.matches || false,
         baseScore: score.baseScore,
         finalScore: score.finalScore,
+        // V2 Scoring Fields - Now properly assigned
+        discoveryScore: score.discoveryScore,
+        fitScore: score.fitScore,
+        positionabilityScore: score.positionabilityScore,
+        finalVerdict: score.finalVerdict,
+        fitReasons: score.fitReasons,
+        fitRisks: score.fitRisks,
+        fitGaps: score.fitGaps,
+        fitBreakdown: score.fitBreakdown,
+        positionabilityBreakdown: score.positionabilityBreakdown,
       };
     } catch (error) {
       console.error(`[discovery] scoring failed for job: ${job.title} at ${job.company}`, error);
@@ -173,8 +183,9 @@ export async function runDiscovery(query?: string): Promise<DiscoverySummary> {
   for (const job of topJobs) {
     try {
       console.log(`[discovery] attempting to save job: ${job.title} at ${job.company} (score: ${job.matchScore})`);
+      console.log(`[discovery] V2 scores - discoveryScore: ${job.discoveryScore}, fitScore: ${job.fitScore}, positionabilityScore: ${job.positionabilityScore}, finalVerdict: ${job.finalVerdict}`);
       
-      // Use V1.2 fields for now - V2 fields calculated but not persisted
+      // Use V2 scoring fields with proper persistence
       const data = {
         title: job.title,
         company: job.company,
@@ -196,6 +207,15 @@ export async function runDiscovery(query?: string): Promise<DiscoverySummary> {
         seniorityAllowed: job.seniorityAllowed,
         baseScore: job.baseScore,
         finalScore: job.finalScore,
+        // V2 Scoring Fields - Now persisted
+        discoveryScore: job.discoveryScore || job.matchScore,
+        fitScore: job.fitScore || 0,
+        positionabilityScore: job.positionabilityScore || 0,
+        finalVerdict: job.finalVerdict || 'SKIP',
+        fitReasons: job.fitReasons || [],
+        fitRisks: job.fitRisks || [],
+        fitGaps: job.fitGaps || [],
+        fitBreakdown: job.fitBreakdown || {},
         lastSeenAt: now,
       };
 
