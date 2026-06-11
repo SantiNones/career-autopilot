@@ -57,7 +57,7 @@ export async function POST(
         title: newTitle,
         parsedJson: updatedJson as unknown as object,
         status: "SCORED",
-        applicationStatus: evaluation.label,
+        applicationStatus: evaluation.label === 'APPLY_STRETCH' ? 'APPLY' : evaluation.label,
         evaluations: {
           create: {
             label: evaluation.label,

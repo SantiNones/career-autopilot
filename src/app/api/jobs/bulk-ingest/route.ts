@@ -118,7 +118,7 @@ export async function POST(req: Request) {
             rawText: parsed.rawText,
             parsedJson: parsed.parsedJson as object,
             status: "SCORED",
-            applicationStatus: evaluation.label,
+            applicationStatus: evaluation.label === 'APPLY_STRETCH' ? 'APPLY' : evaluation.label,
             evaluations: {
               create: {
                 label: evaluation.label,
