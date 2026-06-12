@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { analyzeFitV3 } from "./fitAnalysis/fitAnalysisV3";
+import { analyzeFitV4 } from "./fitAnalysis/fitAnalysisV4";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -386,52 +386,60 @@ export async function saveFitAnalysis(jobId: string): Promise<void> {
 
   if (!job) return;
 
-  // Use V3 evidence-based analysis if Candidate Intelligence is available
+  // Use V4 capability-based analysis if Candidate Intelligence is available
   if (candidateIntelligence) {
     try {
-      const v3Result = await analyzeFitV3(job as any, candidateIntelligence);
-      
-      // Convert V3 result to legacy format for compatibility
+      const v4Result = await analyzeFitV4(job as any, candidateIntelligence);
+
+      // Convert V4 result to legacy format for compatibility
       const legacyResult: FitAnalysisResult = {
-        strengths: v3Result.gapAnalysis.strongEvidence,
-        gaps: v3Result.gapAnalysis.missingEvidence,
-        matchingSkills: v3Result.evidenceMatches
+        strengths: v4Result.gapAnalysis.strongEvidence,
+        gaps: v4Result.gapAnalysis.missingEvidence,
+        matchingSkills: v4Result.evidenceMatches
           .filter(m => m.evidenceStrength !== 'none')
           .map(m => m.requirement),
-        matchingProjects: v3Result.evidenceMatches
+        matchingProjects: v4Result.evidenceMatches
           .filter(m => m.evidenceStrength !== 'none' && m.evidence.length > 0)
           .map(m => m.evidence.join(', ')),
-        recommendedAngle: `Evidence-based fit with ${v3Result.score}% match`,
+        recommendedAngle: `${v4Result.verdict} — ${v4Result.score}% evidence-based fit`,
         companyType: "Unknown",
         jobFocus: job.title || "Unknown",
         seniorityDetected: "Unknown",
-        confidenceScore: v3Result.score,
+        confidenceScore: v4Result.score,
+      };
+
+      // Verdict, gates and capability tiers are stored inside the existing
+      // JSON columns (no schema change)
+      const scoreBreakdown = {
+        ...v4Result.scoreBreakdown,
+        verdict: v4Result.verdict,
+        gates: v4Result.gates,
+        engine: "v4_capability_model_d",
       };
 
       await prisma.fitAnalysis.upsert({
         where: { jobPostingId: jobId },
-        create: { 
-          jobPostingId: jobId, 
+        create: {
+          jobPostingId: jobId,
           ...legacyResult,
-          // Store V3 data in additional fields if needed
-          evidenceMatches: v3Result.evidenceMatches as any,
-          gapAnalysis: v3Result.gapAnalysis as any,
-          v3Score: v3Result.score,
-          v3ScoreBreakdown: v3Result.scoreBreakdown as any,
+          evidenceMatches: v4Result.evidenceMatches as any,
+          gapAnalysis: v4Result.gapAnalysis as any,
+          v3Score: v4Result.score,
+          v3ScoreBreakdown: scoreBreakdown as any,
         },
-        update: { 
+        update: {
           ...legacyResult,
-          evidenceMatches: v3Result.evidenceMatches as any,
-          gapAnalysis: v3Result.gapAnalysis as any,
-          v3Score: v3Result.score,
-          v3ScoreBreakdown: v3Result.scoreBreakdown as any,
+          evidenceMatches: v4Result.evidenceMatches as any,
+          gapAnalysis: v4Result.gapAnalysis as any,
+          v3Score: v4Result.score,
+          v3ScoreBreakdown: scoreBreakdown as any,
         },
       });
 
-      console.log("[fit-analysis] Saved V3 evidence-based analysis for job:", jobId);
+      console.log("[fit-analysis] Saved V4 capability-based analysis for job:", jobId, "score:", v4Result.score, "verdict:", v4Result.verdict);
       return;
     } catch (error) {
-      console.error("[fit-analysis] V3 analysis failed, falling back to legacy:", error);
+      console.error("[fit-analysis] V4 analysis failed, falling back to legacy:", error);
     }
   }
 

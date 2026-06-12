@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { analyzeFitV3 } from "@/server/fitAnalysis/fitAnalysisV3";
+import { analyzeFitV4, FitVerdict } from "@/server/fitAnalysis/fitAnalysisV4";
 import { mapEvidenceInventory, matchRequirementToEvidence, CapabilityMatch } from "@/server/capability/capabilityMatcher";
 import { realBenchmarkJobs, ValidationJobV2 } from "./validationDatasetV2";
 
@@ -31,6 +32,12 @@ interface JobBenchmark {
   v3: { strong: number; medium: number; weak: number; none: number; coverage: number };
   cap: { strong: number; medium: number; weak: number; none: number; coverage: number };
   capMatches: CapabilityMatch[];
+  v4Score: number;
+  v4Verdict: FitVerdict;
+  v4Gates: string[];
+  expectedVerdict: string;
+  expectedScoreRange: [number, number];
+  scoreInRange: boolean;
 }
 
 export async function runCapabilityBenchmark(): Promise<{ report: string; results: JobBenchmark[] }> {
@@ -60,6 +67,7 @@ export async function runCapabilityBenchmark(): Promise<{ report: string; result
     };
 
     const analysis = await analyzeFitV3(mockJobPosting as any, candidateIntelligence);
+    const v4 = await analyzeFitV4(mockJobPosting as any, candidateIntelligence);
 
     // Current V3 matching results
     const v3Counts = { strong: 0, medium: 0, weak: 0, none: 0 };
@@ -88,6 +96,12 @@ export async function runCapabilityBenchmark(): Promise<{ report: string; result
       v3: { ...v3Counts, coverage: total ? Math.round((v3Covered / total) * 100) : 0 },
       cap: { ...capCounts, coverage: total ? Math.round((capCovered / total) * 100) : 0 },
       capMatches,
+      v4Score: v4.score,
+      v4Verdict: v4.verdict,
+      v4Gates: v4.gates,
+      expectedVerdict: job.expectedVerdict,
+      expectedScoreRange: job.expectedScoreRange as [number, number],
+      scoreInRange: v4.score >= job.expectedScoreRange[0] && v4.score <= job.expectedScoreRange[1],
     });
   }
 
@@ -109,6 +123,17 @@ function buildReport(results: JobBenchmark[], evidenceCapCount: number, evidence
 - Total requirements: ${totalReqs}
 - Unmapped requirements (no capability found): ${totalUnmapped} (${((totalUnmapped / totalReqs) * 100).toFixed(0)}%)
 - Deterministic mapping coverage: ${(100 - (totalUnmapped / totalReqs) * 100).toFixed(0)}%
+
+## Production V4 Scores vs Expected
+
+| Job | V4 Score | V4 Verdict | Expected Verdict | Expected Range | In Range | Gates |
+|---|---|---|---|---|---|---|
+${results.map(r =>
+  `| ${r.title} (${r.company}) | ${r.v4Score} | ${r.v4Verdict} | ${r.expectedVerdict} | ${r.expectedScoreRange[0]}-${r.expectedScoreRange[1]} | ${r.scoreInRange ? "YES" : "no"} | ${r.v4Gates.length ? r.v4Gates.join("; ") : "-"} |`
+).join("\n")}
+
+- Verdict accuracy: ${results.filter(r => r.v4Verdict === r.expectedVerdict).length}/${results.length}
+- Score in expected range: ${results.filter(r => r.scoreInRange).length}/${results.length}
 
 ## Overall Coverage: V3 vs Capability Matching
 

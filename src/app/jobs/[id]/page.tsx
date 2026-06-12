@@ -190,13 +190,45 @@ export default async function JobDetailPage(props: {
               />
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
-              {ev && (
-                <div className="flex flex-col items-end gap-0.5">
-                  <span className="text-xs text-zinc-400">Fit Score</span>
-                  <ScorePill score={ev.totalScore} />
-                </div>
-              )}
-              {ev && <LabelBadge label={ev.label} />}
+              {(() => {
+                const v4Score = job.fitAnalysis?.v3Score ?? null;
+                const breakdown = job.fitAnalysis?.v3ScoreBreakdown as any;
+                const verdict = breakdown?.verdict as string | undefined;
+                if (v4Score !== null) {
+                  return (
+                    <>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-xs text-zinc-400">Fit Score</span>
+                        <ScorePill score={v4Score} />
+                      </div>
+                      {verdict && (
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                          verdict === "APPLY" ? "bg-emerald-100 text-emerald-800" :
+                          verdict === "APPLY_STRETCH" ? "bg-teal-100 text-teal-800" :
+                          verdict === "MAYBE" ? "bg-amber-100 text-amber-800" :
+                          "bg-rose-100 text-rose-800"
+                        }`}>
+                          {verdict.replace("_", " ")}
+                        </span>
+                      )}
+                      {ev && (
+                        <span className="text-xs text-zinc-400">Discovery: {ev.totalScore}</span>
+                      )}
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    {ev && (
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-xs text-zinc-400">Fit Score</span>
+                        <ScorePill score={ev.totalScore} />
+                      </div>
+                    )}
+                    {ev && <LabelBadge label={ev.label} />}
+                  </>
+                );
+              })()}
               <StatusBadge status={appStatus} />
             </div>
           </div>
@@ -358,23 +390,36 @@ export default async function JobDetailPage(props: {
           if (!evidenceMatches || evidenceMatches.length === 0) return null;
           
           const strongEvidence = evidenceMatches.filter(m => m.evidenceStrength === 'strong');
-          const partialEvidence = evidenceMatches.filter(m => m.evidenceStrength === 'medium');
+          const partialEvidence = evidenceMatches.filter(m => m.evidenceStrength === 'medium' || m.evidenceStrength === 'weak');
           const missingEvidence = evidenceMatches.filter(m => m.evidenceStrength === 'none');
+          const breakdown = job.fitAnalysis.v3ScoreBreakdown as any;
+          const gates = (breakdown?.gates as string[]) || [];
           
           return (
             <div className="rounded-xl border border-zinc-200 bg-white p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-zinc-900">Evidence Match</h2>
-                {v3Score && (
+                {v3Score !== null && v3Score !== undefined && (
                   <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-bold tabular-nums ${
-                    v3Score >= 70 ? "bg-emerald-100 text-emerald-800" :
-                    v3Score >= 50 ? "bg-amber-100 text-amber-800" :
+                    v3Score >= 65 ? "bg-emerald-100 text-emerald-800" :
+                    v3Score >= 40 ? "bg-amber-100 text-amber-800" :
                     "bg-rose-100 text-rose-800"
                   }`}>
                     {v3Score}% evidence-based fit
                   </span>
                 )}
               </div>
+
+              {gates.length > 0 && (
+                <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3">
+                  <p className="text-xs font-semibold text-rose-800">Score capped by gates:</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {gates.map((g: string, i: number) => (
+                      <li key={i} className="text-xs text-rose-700">{g}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 {/* Strong Evidence */}
@@ -395,6 +440,13 @@ export default async function JobDetailPage(props: {
                               ))}
                             </ul>
                           )}
+                          {match.capabilities && match.capabilities.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {match.capabilities.slice(0, 4).map((cap: string, j: number) => (
+                                <span key={j} className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700">{cap}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -413,6 +465,13 @@ export default async function JobDetailPage(props: {
                           <p className="text-xs font-medium text-amber-900">{match.requirement}</p>
                           {match.gap && (
                             <p className="mt-1 text-xs text-amber-700">{match.gap}</p>
+                          )}
+                          {match.capabilities && match.capabilities.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {match.capabilities.slice(0, 4).map((cap: string, j: number) => (
+                                <span key={j} className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">{cap}</span>
+                              ))}
+                            </div>
                           )}
                         </div>
                       ))}

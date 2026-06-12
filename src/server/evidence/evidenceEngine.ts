@@ -159,7 +159,8 @@ Focus on:
       resumeMaster.projects,
       resumeMaster.skills,
       insights,
-      ci.technicalStack || null
+      ci.technicalStack || null,
+      ci.languages || null
     );
 
     console.log("[evidence-engine] Enriched inventory:", enrichedItems.length, "items");
@@ -243,7 +244,8 @@ function generateFallbackEvidenceInventory(
     resumeMaster.projects,
     resumeMaster.skills,
     insights,
-    ci.technicalStack || null
+    ci.technicalStack || null,
+    ci.languages || null
   );
 
   const topEvidenceAreas = enrichedItems

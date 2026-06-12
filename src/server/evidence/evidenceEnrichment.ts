@@ -239,6 +239,41 @@ export function buildExperienceEvidence(insights: any): EnrichedEvidenceItem[] {
     });
 }
 
+export function buildLanguageEvidence(languages: any): EnrichedEvidenceItem[] {
+  if (!Array.isArray(languages)) return [];
+
+  const items: EnrichedEvidenceItem[] = [];
+  for (const entry of languages) {
+    // Supports ["English (native)"], [{"English":"native"}] and
+    // [{"language":"English","proficiency_level":"native"}] shapes
+    let pairs: [string, string][];
+    if (typeof entry === "string") {
+      pairs = [[entry.replace(/\s*\(.*\)$/, ""), entry.match(/\((.*)\)/)?.[1] || ""]];
+    } else if (entry && typeof entry === "object" && (entry.language || entry.name)) {
+      pairs = [[String(entry.language || entry.name), String(entry.proficiency_level || entry.proficiency || entry.level || "")]];
+    } else if (entry && typeof entry === "object") {
+      pairs = Object.entries(entry).map(([k, v]) => [k, String(v)]);
+    } else {
+      continue;
+    }
+
+    for (const [lang, level] of pairs) {
+      if (!lang) continue;
+      const capabilities = tagCapabilities([lang, "communication"]);
+      items.push({
+        claim: level ? `${lang} (${level})` : lang,
+        evidence: [`Language: ${lang}${level ? ` — ${level}` : ""}`],
+        evidenceStrength: "strong",
+        category: "Languages",
+        sources: ["languages"],
+        source: "experience",
+        capabilities,
+      });
+    }
+  }
+  return items;
+}
+
 // --- Merge --------------------------------------------------------------------
 
 export function enrichEvidenceInventory(
@@ -246,7 +281,8 @@ export function enrichEvidenceInventory(
   resumeProjects: string | null | undefined,
   resumeSkills: string | null | undefined,
   experienceInsights: any,
-  technicalStack: Record<string, string> | null
+  technicalStack: Record<string, string> | null,
+  languages?: any
 ): EnrichedEvidenceItem[] {
   const projects = parseProjectsFromResume(resumeProjects);
   const skillsTechs = parseSkillsSection(resumeSkills);
@@ -254,6 +290,7 @@ export function enrichEvidenceInventory(
   const projectItems = buildProjectEvidence(projects);
   const techItems = buildTechnologyEvidence(projects, skillsTechs, technicalStack);
   const experienceItems = buildExperienceEvidence(experienceInsights);
+  const languageItems = buildLanguageEvidence(languages);
 
   // Tag base (LLM/fallback) items with capabilities; keep as "analysis" source
   const analysisItems: EnrichedEvidenceItem[] = (baseItems || []).map((item: any) => ({
@@ -270,7 +307,7 @@ export function enrichEvidenceInventory(
 
   // Merge with dedupe by normalized claim (structured items win)
   const merged = new Map<string, EnrichedEvidenceItem>();
-  for (const item of [...projectItems, ...experienceItems, ...techItems, ...analysisItems]) {
+  for (const item of [...projectItems, ...experienceItems, ...languageItems, ...techItems, ...analysisItems]) {
     const key = item.claim.toLowerCase().trim();
     if (!key || merged.has(key)) continue;
     merged.set(key, item);

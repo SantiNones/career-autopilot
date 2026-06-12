@@ -4,7 +4,7 @@ import { extractRequirementsDeterministic } from "./deterministicExtractor";
 
 const openai = new OpenAI();
 
-interface JobRequirement {
+export interface JobRequirement {
   requirement: string;
   category: "Technical Skills" | "Experience" | "Languages" | "Domain Knowledge" | "Customer-facing Skills" | "Leadership" | "Product Experience" | "AI / ML Experience";
   importance: "critical" | "important" | "nice_to_have";
@@ -115,7 +115,7 @@ export async function analyzeFitV3(
   };
 }
 
-async function extractRequirements(jobPosting: JobPosting): Promise<JobRequirement[]> {
+export async function extractRequirements(jobPosting: JobPosting): Promise<JobRequirement[]> {
   const prompt = `
 You are a job requirements analyst. Extract structured requirements from this job description.
 
