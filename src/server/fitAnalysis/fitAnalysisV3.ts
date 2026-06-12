@@ -184,10 +184,16 @@ async function findMatchingEvidence(
   candidateIntelligence: any
 ): Promise<EvidenceMatch> {
   
-  // Find evidence items that match the requirement
-  const matchingEvidence = evidenceInventory.filter((evidence: any) => 
-    isEvidenceMatching(requirement.requirement, evidence, candidateIntelligence)
-  );
+  // Find evidence items that match the requirement with detailed matching info
+  const matchingEvidenceWithDetails = evidenceInventory.map((evidence: any) => {
+    const matchResult = isEvidenceMatching(requirement.requirement, evidence, candidateIntelligence);
+    return {
+      evidence,
+      matchResult
+    };
+  }).filter(item => item.matchResult.matches);
+  
+  const matchingEvidence = matchingEvidenceWithDetails.map(item => item.evidence);
 
   if (matchingEvidence.length === 0) {
     return {
@@ -198,27 +204,44 @@ async function findMatchingEvidence(
     };
   }
 
-  // Determine evidence strength based on quality and quantity
-  const strongEvidence = matchingEvidence.filter((e: any) => e.evidenceStrength === 'strong');
-  const mediumEvidence = matchingEvidence.filter((e: any) => e.evidenceStrength === 'medium');
-  const weakEvidence = matchingEvidence.filter((e: any) => e.evidenceStrength === 'weak');
+  // Determine evidence strength based on matching results and original evidence strength
+  let finalStrength: "strong" | "medium" | "weak" | "none" = "none";
+  let gap: string = "No matching evidence";
+  let matchReasons: string[] = [];
 
-  let evidenceStrength: "strong" | "medium" | "weak" | "none";
-  let gap: string;
-
-  if (strongEvidence.length > 0) {
-    evidenceStrength = "strong";
-    gap = "";
-  } else if (mediumEvidence.length > 0) {
-    evidenceStrength = "medium";
-    gap = "Limited evidence depth";
-  } else if (weakEvidence.length > 0) {
-    evidenceStrength = "weak";
-    gap = "Tangential evidence only";
-  } else {
-    evidenceStrength = "none";
-    gap = "No matching evidence";
+  // Calculate final strength based on match confidence and original evidence strength
+  for (const item of matchingEvidenceWithDetails) {
+    const originalStrength = item.evidence.evidenceStrength || "medium";
+    const matchStrength = item.matchResult.strength;
+    
+    // Final strength is limited by the lower of original strength and match confidence
+    let itemStrength: "strong" | "medium" | "weak" | "none" = "none";
+    
+    if (originalStrength === "strong" && matchStrength === "strong") {
+      itemStrength = "strong";
+    } else if ((originalStrength === "strong" || originalStrength === "medium") && 
+               (matchStrength === "strong" || matchStrength === "medium")) {
+      itemStrength = "medium";
+    } else {
+      itemStrength = "weak";
+    }
+    
+    // Use the highest strength found
+    if (itemStrength === "strong") {
+      finalStrength = "strong";
+      gap = "";
+    } else if (itemStrength === "medium" && finalStrength !== "strong") {
+      finalStrength = "medium";
+      gap = "Limited evidence depth";
+    } else if (itemStrength === "weak" && finalStrength === "none") {
+      finalStrength = "weak";
+      gap = "Tangential evidence only";
+    }
+    
+    matchReasons.push(item.matchResult.reason);
   }
+
+  const evidenceStrength = finalStrength;
 
   // Flatten evidence sources
   const evidenceSources = matchingEvidence.flatMap((e: any) => e.evidence || []);
@@ -231,35 +254,194 @@ async function findMatchingEvidence(
   };
 }
 
-function isEvidenceMatching(requirement: string, evidence: any, candidateIntelligence: any): boolean {
-  const evidenceClaim = evidence.claim?.toLowerCase() || "";
+function isEvidenceMatching(requirement: string, evidence: any, candidateIntelligence: any): { matches: boolean; strength: "strong" | "medium" | "weak" | "none"; reason: string } {
   const requirementLower = requirement.toLowerCase();
+  const evidenceClaim = evidence.claim?.toLowerCase() || "";
+  const evidenceCategory = evidence.category?.toLowerCase() || "";
+  const evidenceTexts = (evidence.evidence || []).map((e: string) => e.toLowerCase());
   
-  // Check if evidence claim contains requirement keywords
+  // Extract keywords from requirement
   const requirementKeywords = extractKeywords(requirementLower);
+  const requirementTokens = normalizeTokens(requirementLower);
   
-  // Direct claim matching
-  if (requirementKeywords.some(keyword => evidenceClaim.includes(keyword))) {
-    return true;
+  // 1. Category overlap matching
+  const categoryMatch = checkCategoryOverlap(requirementLower, evidenceCategory);
+  if (categoryMatch.matches) {
+    return {
+      matches: true,
+      strength: categoryMatch.strength,
+      reason: `Category overlap: ${categoryMatch.reason}`
+    };
   }
   
-  // Technical stack matching
+  // 2. Keyword overlap with synonyms
+  const keywordMatch = checkKeywordOverlap(requirementTokens, evidenceClaim, evidenceTexts, candidateIntelligence);
+  if (keywordMatch.matches) {
+    return {
+      matches: true,
+      strength: keywordMatch.strength,
+      reason: `Keyword overlap: ${keywordMatch.reason}`
+    };
+  }
+  
+  // 3. Direct claim matching (original logic)
+  if (requirementKeywords.some(keyword => evidenceClaim.includes(keyword))) {
+    return {
+      matches: true,
+      strength: "weak",
+      reason: "Direct claim keyword match"
+    };
+  }
+  
+  // 4. Technical stack matching
   if (candidateIntelligence.technicalStack) {
     const techStack = Object.keys(candidateIntelligence.technicalStack).map(t => t.toLowerCase());
     if (requirementKeywords.some(keyword => techStack.some(tech => tech.includes(keyword)))) {
-      return true;
+      return {
+        matches: true,
+        strength: "medium",
+        reason: "Technical stack match"
+      };
     }
   }
   
-  // Technical strengths matching
+  // 5. Technical strengths matching
   if (candidateIntelligence.technicalStrengths) {
     const strengths = (candidateIntelligence.technicalStrengths as string[]).map(s => s.toLowerCase());
     if (requirementKeywords.some(keyword => strengths.some(strength => strength.includes(keyword)))) {
-      return true;
+      return {
+        matches: true,
+        strength: "medium",
+        reason: "Technical strengths match"
+      };
     }
   }
   
-  return false;
+  return {
+    matches: false,
+    strength: "none",
+    reason: "No match found"
+  };
+}
+
+function checkCategoryOverlap(requirement: string, evidenceCategory: string): { matches: boolean; strength: "strong" | "medium" | "weak" | "none"; reason: string } {
+  // Category mapping for overlap detection
+  const categoryGroups = {
+    "ai / ml experience": ["ai / llm development", "ai development", "machine learning", "artificial intelligence"],
+    "technical skills": ["frontend development", "backend development", "full stack development", "javascript development", "typescript development", "react development", "node.js development"],
+    "full stack": ["frontend development", "backend development", "full stack development", "javascript development", "typescript development"],
+    "frontend": ["frontend development", "javascript development", "typescript development", "react development"],
+    "backend": ["backend development", "node.js development", "javascript development", "python development"],
+    "customer-facing skills": ["customer-facing experience", "communication", "client interaction"],
+    "leadership": ["project ownership", "leadership", "team management"],
+    "product experience": ["product development", "project ownership", "product building"],
+    "experience": ["professional experience", "project experience", "work experience"]
+  };
+  
+  // Check if requirement contains any category keywords
+  for (const [categoryKey, relatedCategories] of Object.entries(categoryGroups)) {
+    if (requirement.includes(categoryKey) || requirement.includes(categoryKey.replace(/[^a-z\s]/g, ''))) {
+      if (relatedCategories.some(cat => evidenceCategory.includes(cat))) {
+        return {
+          matches: true,
+          strength: "medium",
+          reason: `${categoryKey} matches ${evidenceCategory}`
+        };
+      }
+    }
+  }
+  
+  // Direct category match
+  if (requirement.includes(evidenceCategory) || evidenceCategory.includes(requirement)) {
+    return {
+      matches: true,
+      strength: "strong",
+      reason: "Direct category match"
+    };
+  }
+  
+  return { matches: false, strength: "weak", reason: "No category overlap" };
+}
+
+function checkKeywordOverlap(
+  requirementTokens: string[], 
+  evidenceClaim: string, 
+  evidenceTexts: string[], 
+  candidateIntelligence: any
+): { matches: boolean; strength: "strong" | "medium" | "weak" | "none"; reason: string } {
+  // Synonym map
+  const synonymMap: { [key: string]: string[] } = {
+    // AI terms
+    "ai": ["artificial intelligence", "generative ai", "genai", "llm", "openai", "agent", "agents", "agentic", "langchain", "langgraph", "prompt", "prompting", "rag"],
+    "machine learning": ["ai", "artificial intelligence", "ml", "llm", "generative ai"],
+    "llm": ["ai", "artificial intelligence", "large language model", "openai", "generative ai", "genai"],
+    "openai": ["ai", "llm", "generative ai", "artificial intelligence"],
+    "generative ai": ["ai", "genai", "llm", "artificial intelligence"],
+    "agentic": ["ai", "agent", "agents", "llm", "generative ai"],
+    
+    // Full stack terms
+    "full stack": ["frontend", "backend", "react", "next.js", "typescript", "javascript", "node", "python", "flask", "api", "database", "postgres", "prisma"],
+    "react": ["frontend", "javascript", "typescript", "next.js", "full stack"],
+    "javascript": ["frontend", "backend", "node.js", "react", "typescript", "full stack"],
+    "typescript": ["frontend", "backend", "react", "javascript", "node.js", "full stack"],
+    "node": ["backend", "javascript", "typescript", "api", "full stack"],
+    "python": ["backend", "flask", "api", "full stack", "ai"],
+    "api": ["backend", "node", "python", "flask", "full stack"],
+    "database": ["postgres", "sql", "backend", "full stack"],
+    
+    // Customer-facing terms
+    "customer": ["client", "stakeholder", "support", "communication", "discovery", "requirements", "consulting", "implementation", "solutions"],
+    "client": ["customer", "stakeholder", "support", "communication", "consulting", "solutions"],
+    "communication": ["customer", "client", "stakeholder", "support", "consulting"],
+    
+    // Operations / quality terms
+    "quality": ["kpi", "compliance", "policy", "operations", "process", "documentation", "analysis"],
+    "operations": ["quality", "kpi", "compliance", "policy", "process", "documentation"],
+    "process": ["operations", "quality", "compliance", "policy", "documentation"]
+  };
+  
+  // Check all evidence sources
+  const allEvidenceTexts = [evidenceClaim, ...evidenceTexts];
+  
+  for (const requirementToken of requirementTokens) {
+    // Find synonyms for this token
+    const synonyms = synonymMap[requirementToken] || [requirementToken];
+    
+    for (const evidenceText of allEvidenceTexts) {
+      const evidenceTokens = normalizeTokens(evidenceText);
+      
+      // Check for any synonym overlap
+      const hasSynonymOverlap = synonyms.some(synonym => 
+        evidenceTokens.some(evidenceToken => 
+          evidenceToken.includes(synonym) || synonym.includes(evidenceToken)
+        )
+      );
+      
+      if (hasSynonymOverlap) {
+        const matchedSynonyms = synonyms.filter(synonym => 
+          evidenceTokens.some(evidenceToken => 
+            evidenceToken.includes(synonym) || synonym.includes(evidenceToken)
+          )
+        );
+        
+        return {
+          matches: true,
+          strength: "medium",
+          reason: `"${requirementToken}" matches "${matchedSynonyms.join(', ')}"`
+        };
+      }
+    }
+  }
+  
+  return { matches: false, strength: "none", reason: "No keyword overlap" };
+}
+
+function normalizeTokens(text: string): string[] {
+  return text.toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2)
+    .filter(word => !['and', 'the', 'for', 'with', 'have', 'has', 'are', 'was', 'were', 'will', 'can', 'could', 'should', 'would', 'not', 'but', 'or', 'nor'].includes(word));
 }
 
 function extractKeywords(text: string): string[] {

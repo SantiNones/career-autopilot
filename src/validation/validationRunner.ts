@@ -81,7 +81,7 @@ export async function runValidation(): Promise<{
     throw new Error("Sanity test job not found in dataset");
   }
   
-  const sanityResult = await runSingleJobAnalysis(sanityJob, candidateIntelligence, evidenceInventory);
+  const sanityResult = await runSingleJobAnalysis(sanityJob, candidateIntelligence, evidenceInventory, true); // Enable debug mode
   console.log(`[validation] Sanity test result: ${sanityResult.v3Score}%`);
   
   if (sanityResult.v3Score === 0) {
@@ -108,7 +108,7 @@ export async function runValidation(): Promise<{
   for (const job of validationDataset) {
     console.log(`[validation] Analyzing: ${job.title}`);
     
-    const result = await runSingleJobAnalysis(job, candidateIntelligence, evidenceInventory);
+    const result = await runSingleJobAnalysis(job, candidateIntelligence, evidenceInventory, false); // Normal mode
     results.push(result);
   }
   
@@ -128,7 +128,7 @@ export async function runValidation(): Promise<{
   };
 }
 
-async function runSingleJobAnalysis(job: ValidationJob, candidateIntelligence: any, evidenceInventory: any[]): Promise<ValidationResult> {
+async function runSingleJobAnalysis(job: ValidationJob, candidateIntelligence: any, evidenceInventory: any[], debugMode: boolean = false): Promise<ValidationResult> {
   try {
     // Create mock job posting
     const mockJobPosting = {
@@ -153,9 +153,22 @@ async function runSingleJobAnalysis(job: ValidationJob, candidateIntelligence: a
     
     const analysisResult = await analyzeFitV3(mockJobPosting as any, candidateIntelligence);
     
-    console.log(`[validation-debug] Analysis result score: ${analysisResult.score}`);
-    console.log(`[validation-debug] Evidence matches count: ${analysisResult.evidenceMatches.length}`);
-    console.log(`[validation-debug] Sample matches:`, JSON.stringify(analysisResult.evidenceMatches.slice(0, 2), null, 2));
+    if (debugMode) {
+      console.log(`[evidence-match-debug] Job: ${job.title}`);
+      console.log(`[evidence-match-debug] Analysis result score: ${analysisResult.score}`);
+      console.log(`[evidence-match-debug] Evidence matches count: ${analysisResult.evidenceMatches.length}`);
+      
+      analysisResult.evidenceMatches.forEach((match, index) => {
+        console.log(`[evidence-match-debug] Match ${index + 1}:`);
+        console.log(`[evidence-match-debug]   requirement: ${match.requirement}`);
+        console.log(`[evidence-match-debug]   evidenceStrength: ${match.evidenceStrength}`);
+        console.log(`[evidence-match-debug]   evidence: ${match.evidence.slice(0, 2).join(', ')}`);
+        console.log(`[evidence-match-debug]   gap: ${match.gap}`);
+      });
+    } else {
+      console.log(`[validation-debug] Analysis result score: ${analysisResult.score}`);
+      console.log(`[validation-debug] Evidence matches count: ${analysisResult.evidenceMatches.length}`);
+    }
     
     // Convert score to verdict
     const actualVerdict = scoreToVerdict(analysisResult.score);
