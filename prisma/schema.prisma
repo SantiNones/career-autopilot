@@ -166,6 +166,10 @@ model FitAnalysis {
   jobFocus          String
   seniorityDetected String
   confidenceScore   Int
+  evidenceMatches   Json?
+  gapAnalysis       Json?
+  v3Score           Int?
+  v3ScoreBreakdown  Json?
   jobPosting        JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
 }
 

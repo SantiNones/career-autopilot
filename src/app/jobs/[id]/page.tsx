@@ -349,6 +349,102 @@ export default async function JobDetailPage(props: {
           );
         })()}
 
+        {/* Evidence Match - V3 Feature */}
+        {job.fitAnalysis && job.fitAnalysis.evidenceMatches && (() => {
+          const evidenceMatches = job.fitAnalysis.evidenceMatches as any[];
+          const gapAnalysis = job.fitAnalysis.gapAnalysis as any;
+          const v3Score = job.fitAnalysis.v3Score as number;
+          
+          if (!evidenceMatches || evidenceMatches.length === 0) return null;
+          
+          const strongEvidence = evidenceMatches.filter(m => m.evidenceStrength === 'strong');
+          const partialEvidence = evidenceMatches.filter(m => m.evidenceStrength === 'medium');
+          const missingEvidence = evidenceMatches.filter(m => m.evidenceStrength === 'none');
+          
+          return (
+            <div className="rounded-xl border border-zinc-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-900">Evidence Match</h2>
+                {v3Score && (
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-bold tabular-nums ${
+                    v3Score >= 70 ? "bg-emerald-100 text-emerald-800" :
+                    v3Score >= 50 ? "bg-amber-100 text-amber-800" :
+                    "bg-rose-100 text-rose-800"
+                  }`}>
+                    {v3Score}% evidence-based fit
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {/* Strong Evidence */}
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-600">Strong Evidence</p>
+                  {strongEvidence.length > 0 ? (
+                    <div className="space-y-2">
+                      {strongEvidence.map((match, i) => (
+                        <div key={i} className="rounded-lg bg-emerald-50 p-3">
+                          <p className="text-xs font-medium text-emerald-900">{match.requirement}</p>
+                          {match.evidence && match.evidence.length > 0 && (
+                            <ul className="mt-1 space-y-1">
+                              {match.evidence.slice(0, 2).map((evidence: string, j: number) => (
+                                <li key={j} className="text-xs text-emerald-700 flex items-start gap-1">
+                                  <span className="mt-0.5 text-emerald-500">•</span>
+                                  {evidence}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-400">No strong evidence</p>
+                  )}
+                </div>
+
+                {/* Partial Evidence */}
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">Partial Evidence</p>
+                  {partialEvidence.length > 0 ? (
+                    <div className="space-y-2">
+                      {partialEvidence.map((match, i) => (
+                        <div key={i} className="rounded-lg bg-amber-50 p-3">
+                          <p className="text-xs font-medium text-amber-900">{match.requirement}</p>
+                          {match.gap && (
+                            <p className="mt-1 text-xs text-amber-700">{match.gap}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-400">No partial evidence</p>
+                  )}
+                </div>
+
+                {/* Missing Evidence */}
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-rose-600">Missing Evidence</p>
+                  {missingEvidence.length > 0 ? (
+                    <div className="space-y-2">
+                      {missingEvidence.map((match, i) => (
+                        <div key={i} className="rounded-lg bg-rose-50 p-3">
+                          <p className="text-xs font-medium text-rose-900">{match.requirement}</p>
+                          {match.gap && (
+                            <p className="mt-1 text-xs text-rose-700">{match.gap}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-400">No missing evidence</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Score breakdown + Reasons / Risks / Gaps */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Score breakdown */}

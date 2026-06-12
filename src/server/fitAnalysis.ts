@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { analyzeFitV3 } from "./fitAnalysis/fitAnalysisV3";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -376,14 +377,65 @@ export function analyzeJobFit(
 // ─── DB runner ────────────────────────────────────────────────────────────────
 
 export async function saveFitAnalysis(jobId: string): Promise<void> {
-  const [job, profile, resume] = await Promise.all([
+  const [job, profile, resume, candidateIntelligence] = await Promise.all([
     prisma.jobPosting.findUnique({ where: { id: jobId }, select: { id: true, title: true, companyName: true, rawText: true } }),
     prisma.userProfile.findFirst({ include: { preferences: true }, orderBy: { createdAt: "asc" } }),
     prisma.resumeMaster.findFirst({ orderBy: { createdAt: "asc" } }),
+    prisma.candidateIntelligence.findFirst({ orderBy: { createdAt: "desc" } }),
   ]);
 
   if (!job) return;
 
+  // Use V3 evidence-based analysis if Candidate Intelligence is available
+  if (candidateIntelligence) {
+    try {
+      const v3Result = await analyzeFitV3(job as any, candidateIntelligence);
+      
+      // Convert V3 result to legacy format for compatibility
+      const legacyResult: FitAnalysisResult = {
+        strengths: v3Result.gapAnalysis.strongEvidence,
+        gaps: v3Result.gapAnalysis.missingEvidence,
+        matchingSkills: v3Result.evidenceMatches
+          .filter(m => m.evidenceStrength !== 'none')
+          .map(m => m.requirement),
+        matchingProjects: v3Result.evidenceMatches
+          .filter(m => m.evidenceStrength !== 'none' && m.evidence.length > 0)
+          .map(m => m.evidence.join(', ')),
+        recommendedAngle: `Evidence-based fit with ${v3Result.score}% match`,
+        companyType: "Unknown",
+        jobFocus: job.title || "Unknown",
+        seniorityDetected: "Unknown",
+        confidenceScore: v3Result.score,
+      };
+
+      await prisma.fitAnalysis.upsert({
+        where: { jobPostingId: jobId },
+        create: { 
+          jobPostingId: jobId, 
+          ...legacyResult,
+          // Store V3 data in additional fields if needed
+          evidenceMatches: v3Result.evidenceMatches as any,
+          gapAnalysis: v3Result.gapAnalysis as any,
+          v3Score: v3Result.score,
+          v3ScoreBreakdown: v3Result.scoreBreakdown as any,
+        },
+        update: { 
+          ...legacyResult,
+          evidenceMatches: v3Result.evidenceMatches as any,
+          gapAnalysis: v3Result.gapAnalysis as any,
+          v3Score: v3Result.score,
+          v3ScoreBreakdown: v3Result.scoreBreakdown as any,
+        },
+      });
+
+      console.log("[fit-analysis] Saved V3 evidence-based analysis for job:", jobId);
+      return;
+    } catch (error) {
+      console.error("[fit-analysis] V3 analysis failed, falling back to legacy:", error);
+    }
+  }
+
+  // Fallback to legacy analysis
   const result = analyzeJobFit(
     job,
     profile ?? { headline: null, location: null, languages: [], preferences: null },
