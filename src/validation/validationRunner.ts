@@ -165,7 +165,9 @@ function calculateMetrics(results: ValidationResult[]): ValidationMetrics {
     }
     
     // Update confusion matrix
-    confusionMatrix[expected][actual]++;
+    if (confusionMatrix[expected] && confusionMatrix[expected][actual] !== undefined) {
+      confusionMatrix[expected][actual]++;
+    }
   });
   
   const applyAccuracy = applyJobs.filter(r => r.actualVerdict === "APPLY").length / applyJobs.length * 100;
