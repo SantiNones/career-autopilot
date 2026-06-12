@@ -215,6 +215,8 @@ model CandidateIntelligence {
   riskAreas            Json?
   constraints          Json?
   summary              String?
+  evidenceInventory    Json?
+  topEvidenceAreas     Json?
   userProfile          UserProfile        @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
 }
 

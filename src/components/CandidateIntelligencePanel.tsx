@@ -20,6 +20,8 @@ interface CandidateIntelligence {
   riskAreas: any;
   constraints: any;
   summary: string | null;
+  evidenceInventory: any;
+  topEvidenceAreas: any;
   analyzedAt: string | null;
 }
 
@@ -275,6 +277,85 @@ export function CandidateIntelligencePanel() {
         {renderJsonField(candidateIntelligence.projectEvidence, "Project Evidence")}
         {renderJsonField(candidateIntelligence.experienceEvidence, "Experience Evidence")}
       </div>
+
+      {/* Evidence Inventory */}
+      {candidateIntelligence.evidenceInventory && Array.isArray(candidateIntelligence.evidenceInventory) && candidateIntelligence.evidenceInventory.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-zinc-700">Evidence Inventory</h4>
+            <span className="text-xs text-zinc-500">
+              {candidateIntelligence.evidenceInventory.length} evidence items
+            </span>
+          </div>
+          
+          {/* Top Evidence Areas */}
+          {candidateIntelligence.topEvidenceAreas && Array.isArray(candidateIntelligence.topEvidenceAreas) && candidateIntelligence.topEvidenceAreas.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <h5 className="text-xs font-medium text-zinc-600">Top Evidence Areas</h5>
+              <div className="flex flex-wrap gap-1">
+                {candidateIntelligence.topEvidenceAreas.map((area: string, index: number) => (
+                  <span
+                    key={index}
+                    className="rounded-md bg-purple-100 px-2 py-1 text-xs text-purple-800 font-medium"
+                  >
+                    {area}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Evidence Items */}
+          <div className="space-y-3">
+            {candidateIntelligence.evidenceInventory.map((item: any, index: number) => (
+              <div key={index} className="rounded-md border border-zinc-200 bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h5 className="text-sm font-medium text-zinc-900">{item.claim}</h5>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        item.evidenceStrength === 'strong' ? 'bg-green-100 text-green-800' :
+                        item.evidenceStrength === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {item.evidenceStrength}
+                      </span>
+                    </div>
+                    
+                    {item.category && (
+                      <span className="inline-block text-xs text-zinc-500 bg-zinc-50 px-2 py-1 rounded mb-2">
+                        {item.category}
+                      </span>
+                    )}
+
+                    {item.evidence && Array.isArray(item.evidence) && item.evidence.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <h6 className="text-xs font-medium text-zinc-600">Evidence Sources:</h6>
+                        <ul className="text-xs text-zinc-600 space-y-1">
+                          {item.evidence.map((evidence: string, evidenceIndex: number) => (
+                            <li key={evidenceIndex} className="flex items-center gap-1">
+                              <span className="w-1 h-1 bg-zinc-400 rounded-full"></span>
+                              {evidence}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {item.sources && Array.isArray(item.sources) && item.sources.length > 0 && (
+                      <div className="mt-2">
+                        <span className="text-xs text-zinc-500">
+                          Sources: {item.sources.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

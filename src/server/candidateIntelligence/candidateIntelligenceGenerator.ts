@@ -1,5 +1,6 @@
 import { UserProfile, ResumeMaster, ExperienceInsight, CandidatePreferences } from "@prisma/client";
 import OpenAI from "openai";
+import { generateEvidenceInventory } from "../evidence/evidenceEngine";
 
 const openai = new OpenAI();
 
@@ -26,6 +27,8 @@ interface CandidateIntelligenceOutput {
   riskAreas: any;
   constraints: any;
   summary: string;
+  evidenceInventory: any;
+  topEvidenceAreas: any;
 }
 
 export async function generateCandidateIntelligence(
@@ -162,6 +165,19 @@ Focus on:
     console.log("[candidate-intelligence] Career stage:", candidateIntelligence.careerStage);
     console.log("[candidate-intelligence] Primary role families:", candidateIntelligence.primaryRoleFamilies);
 
+    // Generate evidence inventory
+    console.log("[candidate-intelligence] Generating evidence inventory");
+    const evidenceInventory = await generateEvidenceInventory(
+      candidateIntelligence,
+      experienceInsight,
+      resumeMaster
+    );
+
+    candidateIntelligence.evidenceInventory = evidenceInventory.items;
+    candidateIntelligence.topEvidenceAreas = evidenceInventory.topEvidenceAreas;
+
+    console.log("[candidate-intelligence] Evidence inventory generated with", evidenceInventory.items.length, "items");
+
     return candidateIntelligence;
 
   } catch (error) {
@@ -172,18 +188,18 @@ Focus on:
   }
 }
 
-function generateFallbackCandidateIntelligence(
+async function generateFallbackCandidateIntelligence(
   userProfile: CandidateIntelligenceInput["userProfile"],
   resumeMaster: CandidateIntelligenceInput["resumeMaster"],
   experienceInsight: CandidateIntelligenceInput["experienceInsight"]
-): CandidateIntelligenceOutput {
+): Promise<CandidateIntelligenceOutput> {
   
   const insights = experienceInsight.insights as any;
   const preferences = userProfile.preferences;
 
   console.log("[candidate-intelligence] Using fallback analysis");
 
-  return {
+  const fallbackCandidateIntelligence: any = {
     careerStage: "early_technical_career",
     careerDirection: preferences?.primaryCareerGoal || "Technical professional seeking growth opportunities",
     primaryRoleFamilies: preferences?.targetRoleFamilies || ["software_engineering"],
@@ -207,4 +223,16 @@ function generateFallbackCandidateIntelligence(
     constraints: ["Based in Barcelona", "Prefers Spain/Europe/Remote Europe"],
     summary: "Technical professional with full-stack development skills seeking growth opportunities."
   };
+
+  // Generate fallback evidence inventory
+  const evidenceInventory = await generateEvidenceInventory(
+    fallbackCandidateIntelligence,
+    experienceInsight,
+    resumeMaster
+  );
+
+  fallbackCandidateIntelligence.evidenceInventory = evidenceInventory.items;
+  fallbackCandidateIntelligence.topEvidenceAreas = evidenceInventory.topEvidenceAreas;
+
+  return fallbackCandidateIntelligence;
 }
