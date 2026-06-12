@@ -42,14 +42,65 @@ export async function runValidation(): Promise<{
 }> {
   console.log("[validation] Starting Fit Analysis V3 validation");
   
-  // Get candidate intelligence
-  const candidateIntelligence = await prisma.candidateIntelligence.findFirst({
-    orderBy: { createdAt: "desc" }
-  });
+  // Load all required context like the real app
+  const [candidateIntelligence, userProfile, resumeMaster, experienceInsight] = await Promise.all([
+    prisma.candidateIntelligence.findFirst({ orderBy: { createdAt: "desc" } }),
+    prisma.userProfile.findFirst({ include: { preferences: true }, orderBy: { createdAt: "asc" } }),
+    prisma.resumeMaster.findFirst({ orderBy: { createdAt: "asc" } }),
+    prisma.experienceInsight.findFirst({ orderBy: { createdAt: "desc" } }),
+  ]);
   
   if (!candidateIntelligence) {
-    throw new Error("No candidate intelligence found for validation");
+    throw new Error("Candidate Intelligence missing. Run Candidate Intelligence first.");
   }
+  
+  // Validate evidence inventory exists
+  const ci = candidateIntelligence as any;
+  const evidenceInventory = ci.evidenceInventory || [];
+  const topEvidenceAreas = ci.topEvidenceAreas || [];
+  
+  if (evidenceInventory.length === 0) {
+    throw new Error("Evidence Inventory is empty. Candidate Intelligence may not have been generated properly.");
+  }
+  
+  console.log("[validation-context]");
+  console.log(`candidatePreferences: ${userProfile ? 'found' : 'missing'}`);
+  console.log(`candidateIntelligence: found`);
+  console.log(`experienceInsight: ${experienceInsight ? 'found' : 'missing'}`);
+  console.log(`evidenceInventoryCount: ${evidenceInventory.length}`);
+  console.log(`topEvidenceAreas: ${topEvidenceAreas.length}`);
+  console.log(`targetRoleFamilies: ${ci.primaryRoleFamilies?.length || 0}`);
+  console.log(`technicalStackCount: ${ci.technicalStack ? Object.keys(ci.technicalStack).length : 0}`);
+  console.log(`projectEvidenceCount: ${ci.projectEvidence?.length || 0}`);
+  console.log(`experienceEvidenceCount: ${ci.experienceEvidence?.length || 0}`);
+  
+  // Run sanity test first
+  console.log("[validation] Running sanity test...");
+  const sanityJob = validationDataset.find(job => job.title.includes("Junior AI Engineer"));
+  if (!sanityJob) {
+    throw new Error("Sanity test job not found in dataset");
+  }
+  
+  const sanityResult = await runSingleJobAnalysis(sanityJob, candidateIntelligence, evidenceInventory);
+  console.log(`[validation] Sanity test result: ${sanityResult.v3Score}%`);
+  
+  if (sanityResult.v3Score === 0) {
+    throw new Error("Sanity test failed: Score is 0. Evidence matching not working properly.");
+  }
+  
+  const hasAIOrFullStackEvidence = sanityResult.evidenceMatches.some(match => 
+    match.evidenceStrength !== 'none' && 
+    (match.requirement.toLowerCase().includes('ai') || 
+     match.requirement.toLowerCase().includes('full stack') ||
+     match.requirement.toLowerCase().includes('python') ||
+     match.requirement.toLowerCase().includes('react'))
+  );
+  
+  if (!hasAIOrFullStackEvidence) {
+    throw new Error("Sanity test failed: No AI/Full Stack evidence found for AI Engineer job.");
+  }
+  
+  console.log("[validation] Sanity test passed! Running full validation...");
   
   const results: ValidationResult[] = [];
   
@@ -57,64 +108,8 @@ export async function runValidation(): Promise<{
   for (const job of validationDataset) {
     console.log(`[validation] Analyzing: ${job.title}`);
     
-    try {
-      // Create mock job posting
-      const mockJobPosting = {
-        id: `validation-${job.title.replace(/\s+/g, '-').toLowerCase()}`,
-        title: job.title,
-        companyName: job.company,
-        rawText: job.description,
-        description: job.description,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        location: null,
-        status: "ACTIVE" as const,
-        source: "VALIDATION" as const,
-        url: null,
-        applicationStatus: "NONE" as const,
-      };
-      
-      // Run Fit Analysis V3
-      const analysisResult = await analyzeFitV3(mockJobPosting as any, candidateIntelligence);
-      
-      // Convert score to verdict
-      const actualVerdict = scoreToVerdict(analysisResult.score);
-      
-      const result: ValidationResult = {
-        job,
-        actualVerdict,
-        score: analysisResult.score,
-        evidenceSummary: {
-          strongEvidence: analysisResult.gapAnalysis.strongEvidence,
-          partialEvidence: analysisResult.gapAnalysis.partialEvidence,
-          missingEvidence: analysisResult.gapAnalysis.missingEvidence,
-        },
-        gaps: analysisResult.gapAnalysis.missingEvidence,
-        v3Score: analysisResult.score,
-        evidenceMatches: analysisResult.evidenceMatches,
-      };
-      
-      results.push(result);
-      
-    } catch (error) {
-      console.error(`[validation] Error analyzing ${job.title}:`, error);
-      // Add failed result
-      const result: ValidationResult = {
-        job,
-        actualVerdict: "SKIP", // Default to SKIP on error
-        score: 0,
-        evidenceSummary: {
-          strongEvidence: [],
-          partialEvidence: [],
-          missingEvidence: ["Analysis failed"],
-        },
-        gaps: ["Analysis failed"],
-        v3Score: 0,
-        evidenceMatches: [],
-      };
-      
-      results.push(result);
-    }
+    const result = await runSingleJobAnalysis(job, candidateIntelligence, evidenceInventory);
+    results.push(result);
   }
   
   // Calculate metrics
@@ -131,6 +126,73 @@ export async function runValidation(): Promise<{
     metrics,
     errorAnalysis,
   };
+}
+
+async function runSingleJobAnalysis(job: ValidationJob, candidateIntelligence: any, evidenceInventory: any[]): Promise<ValidationResult> {
+  try {
+    // Create mock job posting
+    const mockJobPosting = {
+      id: `validation-${job.title.replace(/\s+/g, '-').toLowerCase()}`,
+      title: job.title,
+      companyName: job.company,
+      rawText: job.description,
+      description: job.description,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      location: null,
+      status: "ACTIVE" as const,
+      source: "VALIDATION" as const,
+      url: null,
+      applicationStatus: "NONE" as const,
+    };
+    
+    // Run Fit Analysis V3
+    console.log(`[validation-debug] Analyzing job: ${job.title}`);
+    console.log(`[validation-debug] Evidence inventory count: ${evidenceInventory.length}`);
+    console.log(`[validation-debug] Sample evidence:`, JSON.stringify(evidenceInventory.slice(0, 2), null, 2));
+    
+    const analysisResult = await analyzeFitV3(mockJobPosting as any, candidateIntelligence);
+    
+    console.log(`[validation-debug] Analysis result score: ${analysisResult.score}`);
+    console.log(`[validation-debug] Evidence matches count: ${analysisResult.evidenceMatches.length}`);
+    console.log(`[validation-debug] Sample matches:`, JSON.stringify(analysisResult.evidenceMatches.slice(0, 2), null, 2));
+    
+    // Convert score to verdict
+    const actualVerdict = scoreToVerdict(analysisResult.score);
+    
+    const result: ValidationResult = {
+      job,
+      actualVerdict,
+      score: analysisResult.score,
+      evidenceSummary: {
+        strongEvidence: analysisResult.gapAnalysis.strongEvidence,
+        partialEvidence: analysisResult.gapAnalysis.partialEvidence,
+        missingEvidence: analysisResult.gapAnalysis.missingEvidence,
+      },
+      gaps: analysisResult.gapAnalysis.missingEvidence,
+      v3Score: analysisResult.score,
+      evidenceMatches: analysisResult.evidenceMatches,
+    };
+    
+    return result;
+    
+  } catch (error) {
+    console.error(`[validation] Error analyzing ${job.title}:`, error);
+    // Return failed result
+    return {
+      job,
+      actualVerdict: "SKIP", // Default to SKIP on error
+      score: 0,
+      evidenceSummary: {
+        strongEvidence: [],
+        partialEvidence: [],
+        missingEvidence: ["Analysis failed"],
+      },
+      gaps: ["Analysis failed"],
+      v3Score: 0,
+      evidenceMatches: [],
+    };
+  }
 }
 
 function scoreToVerdict(score: number): "APPLY" | "MAYBE" | "SKIP" {
