@@ -163,9 +163,7 @@ const TERM_RULES: TermRule[] = [
 
   // --- Evidence-claim phrasings (candidate side) ---
   { terms: ["technical skills"], capabilities: [{ id: "software_engineering_fundamentals", confidence: "low" }] },
-  { terms: ["whatsapp agent", "whatsapp"], capabilities: [{ id: "ai_workflows", confidence: "high" }, { id: "llm_integration", confidence: "high" }, { id: "api_integration", confidence: "medium" }] },
-  { terms: ["projectflow"], capabilities: [{ id: "ai_product_development", confidence: "high" }, { id: "product_building", confidence: "medium" }] },
-  { terms: ["career autopilot"], capabilities: [{ id: "ai_product_development", confidence: "high" }, { id: "fullstack_development", confidence: "high" }, { id: "database_querying", confidence: "medium" }] },
+  { terms: ["whatsapp", "twilio", "chatbot", "conversational"], capabilities: [{ id: "ai_workflows", confidence: "medium" }, { id: "api_integration", confidence: "medium" }] },
 ];
 
 export function mapToCapabilities(text: string): CapabilityMappingResult {
@@ -173,7 +171,15 @@ export function mapToCapabilities(text: string): CapabilityMappingResult {
   const found = new Map<string, CapabilityMapping>();
 
   for (const rule of TERM_RULES) {
-    const matchedTerm = rule.terms.find(t => normalized.includes(t));
+    const matchedTerm = rule.terms.find(t => {
+      // Short terms must match on word boundaries to avoid substring false
+      // positives (e.g. "vp " inside "mvp ", "rag" inside "storage")
+      if (t.trim().length <= 4) {
+        const escaped = t.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(normalized);
+      }
+      return normalized.includes(t);
+    });
     if (!matchedTerm) continue;
 
     for (const cap of rule.capabilities) {

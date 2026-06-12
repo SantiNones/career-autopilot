@@ -1,5 +1,6 @@
 import { CandidateIntelligence, ExperienceInsight, ResumeMaster } from "@prisma/client";
 import OpenAI from "openai";
+import { enrichEvidenceInventory, parseProjectsFromResume } from "./evidenceEnrichment";
 
 const openai = new OpenAI();
 
@@ -33,6 +34,12 @@ export async function generateEvidenceInventory(
 
   const insights = experienceInsight.insights as any;
   const ci = candidateIntelligence as any;
+
+  // Names parsed from the user's actual data (never hardcoded)
+  const projectNames = parseProjectsFromResume(resumeMaster.projects).map(p => p.name);
+  const companyNames = Array.isArray(insights)
+    ? insights.map((e: any) => e.company).filter(Boolean)
+    : [];
 
   // Prepare the prompt for OpenAI
   const prompt = `
@@ -68,8 +75,8 @@ EVIDENCE QUALITY RULES:
 - Evidence should be specific enough to be reused in CV bullets
 
 SOURCE PRIORITY:
-1. Named projects (Career Autopilot, ProjectFlow AI, WhatsApp Agent MVP, etc.)
-2. Named work experiences (TELUS Digital, Wesser, Fundesplai, etc.)
+1. Named projects${projectNames.length ? ` (${projectNames.join(", ")})` : ""}
+2. Named work experiences${companyNames.length ? ` (${companyNames.join(", ")})` : ""}
 3. Specific metrics or achievements
 4. Education
 5. Technical stack only as support, never primary evidence
@@ -86,11 +93,9 @@ For each evidence item, provide:
 - category: From the list above
 - sources: Where evidence comes from (projects, experience, etc.)
 
-EXAMPLES OF GOOD EVIDENCE:
-- "Career Autopilot: built AI-powered job scoring and material generation workflows using OpenAI"
-- "ProjectFlow AI: generated structured project briefs and delivery plans from vague inputs"
-- "TELUS Digital: maintained quality decisions in policy-driven workflows"
-- "Wesser: adapted communication in target-driven public-facing conversations"
+EXAMPLES OF GOOD EVIDENCE (format, use the candidate's real names):
+- "<Project Name>: built <specific feature/outcome> using <technology>"
+- "<Company>: <specific accomplishment in concrete work context>"
 
 EXAMPLES OF BAD EVIDENCE:
 - "Resume Summary"
@@ -145,10 +150,25 @@ Focus on:
 
     const evidenceInventory = JSON.parse(content) as EvidenceInventory;
 
-    console.log("[evidence-engine] Generated evidence inventory with", evidenceInventory.items.length, "items");
+    console.log("[evidence-engine] LLM generated", evidenceInventory.items.length, "items");
+
+    // Deterministic enrichment: named projects, linked technologies,
+    // professional experience — all parsed from the user's actual data
+    const enrichedItems = enrichEvidenceInventory(
+      evidenceInventory.items,
+      resumeMaster.projects,
+      resumeMaster.skills,
+      insights,
+      ci.technicalStack || null
+    );
+
+    console.log("[evidence-engine] Enriched inventory:", enrichedItems.length, "items");
     console.log("[evidence-engine] Top evidence areas:", evidenceInventory.topEvidenceAreas);
 
-    return evidenceInventory;
+    return {
+      ...evidenceInventory,
+      items: enrichedItems as any,
+    };
 
   } catch (error) {
     console.error("[evidence-engine] OpenAI error:", error);
@@ -216,15 +236,25 @@ function generateFallbackEvidenceInventory(
     });
   }
 
-  const topEvidenceAreas = items
+  // Deterministic enrichment also applies to the fallback path so the
+  // inventory stays rich even when OpenAI is unavailable
+  const enrichedItems = enrichEvidenceInventory(
+    items,
+    resumeMaster.projects,
+    resumeMaster.skills,
+    insights,
+    ci.technicalStack || null
+  );
+
+  const topEvidenceAreas = enrichedItems
     .filter(item => item.evidenceStrength === 'strong' || item.evidenceStrength === 'medium')
     .slice(0, 3)
     .map(item => item.claim);
 
   return {
-    items,
+    items: enrichedItems as any,
     topEvidenceAreas,
-    summary: `Evidence inventory with ${items.length} capability areas identified.`
+    summary: `Evidence inventory with ${enrichedItems.length} capability areas identified.`
   };
 }
 

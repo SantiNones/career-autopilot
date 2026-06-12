@@ -27,11 +27,30 @@ export interface EvidenceItemCapabilities {
 
 export function mapEvidenceInventory(evidenceInventory: any[]): EvidenceItemCapabilities[] {
   return evidenceInventory.map((item: any) => {
-    const texts: string[] = [item.claim || "", item.category || "", ...(item.evidence || [])];
+    const texts: string[] = [
+      item.claim || "",
+      item.category || "",
+      ...(item.evidence || []),
+      ...(item.technologies || []),
+    ];
+    const mapping = mapToCapabilities(texts.join(". "));
+
+    // Enriched inventory items carry their own capability tags — merge them
+    // in as high-confidence mappings
+    if (Array.isArray(item.capabilities)) {
+      const existing = new Set(mapping.capabilities.map(c => c.capabilityId));
+      for (const capId of item.capabilities) {
+        if (!existing.has(capId)) {
+          mapping.capabilities.push({ capabilityId: capId, confidence: "high", matchedTerm: "stored_tag" });
+        }
+      }
+      mapping.unmapped = mapping.capabilities.length === 0;
+    }
+
     return {
       claim: item.claim || "",
       texts,
-      mapping: mapToCapabilities(texts.join(". ")),
+      mapping,
     };
   });
 }

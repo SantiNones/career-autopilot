@@ -279,83 +279,117 @@ export function CandidateIntelligencePanel() {
       </div>
 
       {/* Evidence Inventory */}
-      {candidateIntelligence.evidenceInventory && Array.isArray(candidateIntelligence.evidenceInventory) && candidateIntelligence.evidenceInventory.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium text-zinc-700">Evidence Inventory</h4>
-            <span className="text-xs text-zinc-500">
-              {candidateIntelligence.evidenceInventory.length} evidence items
-            </span>
-          </div>
-          
-          {/* Top Evidence Areas */}
-          {candidateIntelligence.topEvidenceAreas && Array.isArray(candidateIntelligence.topEvidenceAreas) && candidateIntelligence.topEvidenceAreas.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <h5 className="text-xs font-medium text-zinc-600">Top Evidence Areas</h5>
-              <div className="flex flex-wrap gap-1">
-                {candidateIntelligence.topEvidenceAreas.map((area: string, index: number) => (
-                  <span
-                    key={index}
-                    className="rounded-md bg-purple-100 px-2 py-1 text-xs text-purple-800 font-medium"
-                  >
-                    {area}
-                  </span>
-                ))}
-              </div>
+      {candidateIntelligence.evidenceInventory && Array.isArray(candidateIntelligence.evidenceInventory) && candidateIntelligence.evidenceInventory.length > 0 && (() => {
+        const inventory = candidateIntelligence.evidenceInventory as any[];
+        const groups: { key: string; label: string }[] = [
+          { key: "project", label: "Named Projects" },
+          { key: "experience", label: "Professional Experience" },
+          { key: "technology", label: "Technical Evidence" },
+          { key: "analysis", label: "Other Evidence" },
+        ];
+        const grouped = groups
+          .map(g => ({
+            ...g,
+            items: inventory.filter((i: any) => (i.source || "analysis") === g.key),
+          }))
+          .filter(g => g.items.length > 0);
+
+        return (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-zinc-700">Evidence Inventory</h4>
+              <span className="text-xs text-zinc-500">
+                {inventory.length} evidence items
+              </span>
             </div>
-          )}
 
-          {/* Evidence Items */}
-          <div className="space-y-3">
-            {candidateIntelligence.evidenceInventory.map((item: any, index: number) => (
-              <div key={index} className="rounded-md border border-zinc-200 bg-white p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h5 className="text-sm font-medium text-zinc-900">{item.claim}</h5>
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        item.evidenceStrength === 'strong' ? 'bg-green-100 text-green-800' :
-                        item.evidenceStrength === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {item.evidenceStrength}
-                      </span>
-                    </div>
-                    
-                    {item.category && (
-                      <span className="inline-block text-xs text-zinc-500 bg-zinc-50 px-2 py-1 rounded mb-2">
-                        {item.category}
-                      </span>
-                    )}
+            {/* Counts by source */}
+            <div className="flex flex-wrap gap-2">
+              {grouped.map(g => (
+                <span key={g.key} className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-700">
+                  {g.label}: <span className="font-semibold">{g.items.length}</span>
+                </span>
+              ))}
+            </div>
 
-                    {item.evidence && Array.isArray(item.evidence) && item.evidence.length > 0 && (
-                      <div className="flex flex-col gap-1">
-                        <h6 className="text-xs font-medium text-zinc-600">Evidence Sources:</h6>
-                        <ul className="text-xs text-zinc-600 space-y-1">
-                          {item.evidence.map((evidence: string, evidenceIndex: number) => (
-                            <li key={evidenceIndex} className="flex items-center gap-1">
-                              <span className="w-1 h-1 bg-zinc-400 rounded-full"></span>
+            {/* Top Evidence Areas */}
+            {candidateIntelligence.topEvidenceAreas && Array.isArray(candidateIntelligence.topEvidenceAreas) && candidateIntelligence.topEvidenceAreas.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <h5 className="text-xs font-medium text-zinc-600">Top Evidence Areas</h5>
+                <div className="flex flex-wrap gap-1">
+                  {candidateIntelligence.topEvidenceAreas.map((area: string, index: number) => (
+                    <span
+                      key={index}
+                      className="rounded-md bg-purple-100 px-2 py-1 text-xs text-purple-800 font-medium"
+                    >
+                      {area}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Evidence Items grouped by source */}
+            {grouped.map(g => (
+              <div key={g.key} className="flex flex-col gap-2">
+                <h5 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{g.label}</h5>
+                <div className="space-y-2">
+                  {g.items.map((item: any, index: number) => (
+                    <div key={index} className="rounded-md border border-zinc-200 bg-white p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h5 className="text-sm font-medium text-zinc-900">{item.claim}</h5>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          item.evidenceStrength === 'strong' ? 'bg-green-100 text-green-800' :
+                          item.evidenceStrength === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {item.evidenceStrength}
+                        </span>
+                        {item.category && (
+                          <span className="text-xs text-zinc-500 bg-zinc-50 px-2 py-0.5 rounded">
+                            {item.category}
+                          </span>
+                        )}
+                      </div>
+
+                      {item.evidence && Array.isArray(item.evidence) && item.evidence.length > 0 && (
+                        <ul className="text-xs text-zinc-600 space-y-0.5 mb-1">
+                          {item.evidence.slice(0, 3).map((evidence: string, evidenceIndex: number) => (
+                            <li key={evidenceIndex} className="flex items-start gap-1">
+                              <span className="mt-1.5 w-1 h-1 shrink-0 bg-zinc-400 rounded-full"></span>
                               {evidence}
                             </li>
                           ))}
                         </ul>
-                      </div>
-                    )}
+                      )}
 
-                    {item.sources && Array.isArray(item.sources) && item.sources.length > 0 && (
-                      <div className="mt-2">
-                        <span className="text-xs text-zinc-500">
-                          Sources: {item.sources.join(', ')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                      {item.technologies && Array.isArray(item.technologies) && item.technologies.length > 0 && g.key === "project" && (
+                        <div className="flex flex-wrap gap-1 mb-1">
+                          {item.technologies.map((tech: string, i: number) => (
+                            <span key={i} className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">
+                              {tech}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {item.capabilities && Array.isArray(item.capabilities) && item.capabilities.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {item.capabilities.map((cap: string, i: number) => (
+                            <span key={i} className="rounded bg-purple-50 px-1.5 py-0.5 text-xs text-purple-700">
+                              {cap}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
