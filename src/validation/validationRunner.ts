@@ -191,6 +191,10 @@ async function runSingleJobAnalysis(job: ValidationJob, candidateIntelligence: a
     
   } catch (error) {
     console.error(`[validation] Error analyzing ${job.title}:`, error);
+    if (debugMode) {
+      // In sanity/debug mode, surface the real error instead of silently returning 0
+      throw new Error(`Sanity job analysis failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
     // Return failed result
     return {
       job,
@@ -239,9 +243,11 @@ function calculateMetrics(results: ValidationResult[]): ValidationMetrics {
       correct++;
     }
     
-    // Update confusion matrix
-    if (confusionMatrix[expected] && confusionMatrix[expected][actual] !== undefined) {
-      confusionMatrix[expected][actual]++;
+    // Update confusion matrix (keys are lowercase, verdicts are uppercase)
+    const expectedKey = expected.toLowerCase();
+    const actualKey = actual.toLowerCase();
+    if (confusionMatrix[expectedKey] && confusionMatrix[expectedKey][actualKey] !== undefined) {
+      confusionMatrix[expectedKey][actualKey]++;
     }
   });
   

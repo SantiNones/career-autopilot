@@ -1,5 +1,6 @@
 import { JobPosting, CandidateIntelligence } from "@prisma/client";
 import OpenAI from "openai";
+import { extractRequirementsDeterministic } from "./deterministicExtractor";
 
 const openai = new OpenAI();
 
@@ -41,11 +42,29 @@ export async function analyzeFitV3(
   candidateIntelligence: CandidateIntelligence
 ): Promise<FitAnalysisV3Result> {
   
-  console.log("[fit-analysis-v3] Starting evidence-based fit analysis");
+  console.log("[v3-debug] ACTIVE FIT ANALYSIS V3 FUNCTION CALLED");
+
+  const ciDebug = candidateIntelligence as any;
+  const inventoryDebug = ciDebug.evidenceInventory || [];
+  console.log("[v3-debug:input]");
+  console.log(`  jobTitle: ${jobPosting.title}`);
+  console.log(`  jobDescriptionLength: ${jobPosting.rawText?.length || 0}`);
+  console.log(`  candidateIntelligenceExists: ${!!candidateIntelligence}`);
+  console.log(`  evidenceInventoryCount: ${inventoryDebug.length}`);
+  console.log(`  sampleEvidenceItem: ${JSON.stringify(inventoryDebug[0] || null)}`);
 
   // Extract requirements from job description
   const requirements = await extractRequirements(jobPosting);
-  console.log("[fit-analysis-v3] Extracted", requirements.length, "requirements");
+
+  console.log("[v3-debug:requirements]");
+  console.log(`  requirementsCount: ${requirements.length}`);
+  requirements.forEach(r => {
+    console.log(`  - ${r.requirement} | ${r.category} | ${r.importance}`);
+  });
+
+  if (requirements.length === 0) {
+    throw new Error("Requirement extraction returned 0 requirements.");
+  }
 
   // Match evidence against requirements
   const evidenceMatches = await matchEvidence(requirements, candidateIntelligence);
@@ -56,6 +75,25 @@ export async function analyzeFitV3(
 
   // Calculate evidence-based score
   const score = calculateEvidenceScore(evidenceMatches, gapAnalysis);
+
+  const strongCount = evidenceMatches.filter(m => m.evidenceStrength === 'strong').length;
+  const mediumCount = evidenceMatches.filter(m => m.evidenceStrength === 'medium').length;
+  const weakCount = evidenceMatches.filter(m => m.evidenceStrength === 'weak').length;
+  const noneCount = evidenceMatches.filter(m => m.evidenceStrength === 'none').length;
+  const rawScore = strongCount * 10 + mediumCount * 5 + weakCount * 2 - noneCount * 10;
+  console.log("[v3-debug:aggregation]");
+  console.log(`  strongCount: ${strongCount}`);
+  console.log(`  mediumCount: ${mediumCount}`);
+  console.log(`  weakCount: ${weakCount}`);
+  console.log(`  noneCount: ${noneCount}`);
+  console.log(`  rawScoreBeforeClamp: ${rawScore}`);
+  console.log(`  finalScore: ${score}`);
+
+  console.log("[v3-debug:output]");
+  console.log(`  fitScore: ${score}`);
+  console.log(`  strongEvidence: ${gapAnalysis.strongEvidence.join(', ') || 'none'}`);
+  console.log(`  partialEvidence: ${gapAnalysis.partialEvidence.join(', ') || 'none'}`);
+  console.log(`  missingEvidence: ${gapAnalysis.missingEvidence.join(', ') || 'none'}`);
 
   const scoreBreakdown = {
     strongEvidence: evidenceMatches.filter(m => m.evidenceStrength === 'strong').length * 10,
@@ -151,13 +189,33 @@ Be thorough but concise. Extract 5-15 key requirements.
       throw new Error("No response from OpenAI");
     }
 
-    const result = JSON.parse(content);
+    const result = JSON.parse(extractJsonBlock(content));
     return result.requirements || [];
 
   } catch (error) {
-    console.error("[fit-analysis-v3] Error extracting requirements:", error);
-    return [];
+    console.error("[fit-analysis-v3] OpenAI requirement extraction failed, falling back to deterministic extractor:", error instanceof Error ? error.message : error);
+    const deterministic = extractRequirementsDeterministic(
+      jobPosting.title || "",
+      jobPosting.rawText || ""
+    );
+    console.log(`[fit-analysis-v3] Deterministic extraction: roleFamily=${deterministic.roleFamily}, requirements=${deterministic.requirements.length}`);
+    return deterministic.requirements;
   }
+}
+
+function extractJsonBlock(content: string): string {
+  // Strip markdown code fences if present (GPT-4 often wraps JSON in ```json ... ```)
+  const fenceMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch) {
+    return fenceMatch[1];
+  }
+  // Extract the first JSON object if there is surrounding prose
+  const braceStart = content.indexOf("{");
+  const braceEnd = content.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    return content.slice(braceStart, braceEnd + 1);
+  }
+  return content;
 }
 
 async function matchEvidence(
@@ -170,8 +228,10 @@ async function matchEvidence(
   
   const matches: EvidenceMatch[] = [];
 
+  console.log("[v3-debug:matching]");
   for (const requirement of requirements) {
     const match = await findMatchingEvidence(requirement, evidenceInventory, ci);
+    console.log(`  requirement: ${requirement.requirement} | category: ${requirement.category} | evidenceItemsChecked: ${evidenceInventory.length} | matchesFound: ${match.evidence.length} | matchStrength: ${match.evidenceStrength}`);
     matches.push(match);
   }
 
