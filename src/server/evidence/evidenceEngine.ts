@@ -61,27 +61,49 @@ Candidate Intelligence: ${JSON.stringify(ci, null, 2)}
 TASK:
 Generate evidence items that answer "Why is this candidate a fit for this role?"
 
+EVIDENCE QUALITY RULES:
+- Evidence MUST be concrete, named, and reusable
+- NEVER use generic sources like "Resume Summary", "Technical Stack", "Projects"
+- ALWAYS use specific project names, company names, and achievements
+- Evidence should be specific enough to be reused in CV bullets
+
+SOURCE PRIORITY:
+1. Named projects (Career Autopilot, ProjectFlow AI, WhatsApp Agent MVP, etc.)
+2. Named work experiences (TELUS Digital, Wesser, Fundesplai, etc.)
+3. Specific metrics or achievements
+4. Education
+5. Technical stack only as support, never primary evidence
+
+EVIDENCE STRENGTH:
+strong: named project or professional experience directly proves the claim
+medium: adjacent project/work evidence supports the claim  
+weak: only technical stack, education, or indirect signal supports the claim
+
 For each evidence item, provide:
 - claim: Specific capability (e.g., "AI Workflow Development")
-- evidence: List of evidence sources (projects, companies, achievements)
+- evidence: List of specific, named evidence sources
 - evidenceStrength: "strong" | "medium" | "weak"
 - category: From the list above
 - sources: Where evidence comes from (projects, experience, etc.)
 
-RULES:
-- Use structured reasoning, not keyword extraction
-- Evidence must be specific and verifiable
-- Strong evidence = multiple related examples
-- Medium evidence = solid examples but limited scope
-- Weak evidence = single or tangential examples
-- Focus on capabilities, not just technologies
+EXAMPLES OF GOOD EVIDENCE:
+- "Career Autopilot: built AI-powered job scoring and material generation workflows using OpenAI"
+- "ProjectFlow AI: generated structured project briefs and delivery plans from vague inputs"
+- "TELUS Digital: maintained quality decisions in policy-driven workflows"
+- "Wesser: adapted communication in target-driven public-facing conversations"
+
+EXAMPLES OF BAD EVIDENCE:
+- "Resume Summary"
+- "Technical Stack"
+- "Projects"
+- "AI-assisted workflows project"
 
 RETURN JSON with this exact structure:
 {
   "items": [
     {
       "claim": "specific_capability",
-      "evidence": ["evidence_source_1", "evidence_source_2"],
+      "evidence": ["specific_named_evidence_1", "specific_named_evidence_2"],
       "evidenceStrength": "strong|medium|weak",
       "category": "category_name",
       "sources": ["projects", "experience", "education"]
@@ -92,10 +114,11 @@ RETURN JSON with this exact structure:
 }
 
 Focus on:
-1. Evidence from Experience Intelligence (responsibilities, achievements, metrics)
-2. Evidence from projects and technical work
-3. Evidence from career progression and capabilities
-4. Honest assessment of evidence strength
+1. Named projects and specific achievements
+2. Concrete work experiences with company names
+3. Specific metrics and accomplishments
+4. Evidence specific enough for CV bullets and positioning
+5. Honest assessment of evidence strength
 `;
 
   try {
