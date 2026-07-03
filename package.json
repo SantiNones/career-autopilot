@@ -11,7 +11,11 @@
     "db:down": "docker compose down",
     "db:seed": "node prisma/seed.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "benchmarks": "tsx benchmarks/runner.ts",
+    "benchmarks:ai": "ALLOW_OPENAI_BENCHMARKS=true tsx benchmarks/runner.ts",
+    "test": "npm run benchmarks",
+    "validate": "npm run build && npx tsc --noEmit && npm run lint && npm run benchmarks"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -34,6 +38,7 @@
     "eslint-config-next": "16.2.2",
     "prisma": "^6.16.1",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }

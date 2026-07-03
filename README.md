@@ -19,9 +19,9 @@ DISCOVERED → APPLY / MAYBE / SKIP
                  ↓
               APPLIED
                  ↓
-            INTERVIEW
-                 ↓
-              OFFER
+             INTERVIEW
+                 ↓ 
+               OFFER
 ```
 
 At any stage after APPLIED a job can be marked **REJECTED**.  
@@ -96,6 +96,29 @@ npm start
 ```
 
 Set the `DATABASE_URL` environment variable in your hosting provider (e.g. Vercel, Render, Railway).
+
+## Documentation
+
+All documentation is in [`docs/`](docs/README.md), organized by responsibility:
+
+| Folder | Contents |
+|--------|----------|
+| [`docs/product/`](docs/product/) | Vision, evolution, principles, spec |
+| [`docs/architecture/`](docs/architecture/) | System design, dependencies, contracts |
+| [`docs/engineering/`](docs/engineering/) | Benchmarks, CI, roadmap, known issues |
+| [`docs/reports/`](docs/reports/) | Sprint reports and audits |
+| [`docs/decisions/`](docs/decisions/) | Architecture Decision Records |
+
+Start with **[docs/README.md](docs/README.md)** for reading guides.
+
+## Benchmarks
+
+```bash
+npm run benchmarks      # 89 tests, $0, ~24ms
+npm run validate        # build + typecheck + lint + benchmarks
+```
+
+See **[docs/engineering/BENCHMARK_GUIDE.md](docs/engineering/BENCHMARK_GUIDE.md)** for details.
 
 ## Environment Variables
 
